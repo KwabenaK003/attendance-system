@@ -19,13 +19,27 @@ export const supabase = createClient(
   SUPABASE_ANON_KEY ?? "placeholder-anon-key"
 );
 
+export function createDetachedSupabaseClient() {
+  return createClient(
+    SUPABASE_URL ?? "https://placeholder.invalid",
+    SUPABASE_ANON_KEY ?? "placeholder-anon-key",
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    }
+  );
+}
+
 // ─── Supabase SQL Schema (run in Supabase SQL editor) ───────────────────────
 // 
 // -- Profiles table (extends auth.users)
 // create table profiles (
 //   id uuid references auth.users on delete cascade primary key,
 //   full_name text,
-//   role text default 'employee' check (role in ('admin','manager','employee')),
+//   role text default 'employee' check (role in ('admin','ceo','cto','cfo','manager','employee')),
 //   department text,
 //   company_name text,
 //   face_reference jsonb,
@@ -67,37 +81,10 @@ export const supabase = createClient(
 //   created_at timestamptz default now()
 // );
 //
-// -- Projects
-// create table projects (
-//   id uuid default gen_random_uuid() primary key,
-//   name text not null,
-//   client text,
-//   hourly_rate numeric(10,2) default 0,
-//   budget_hours numeric(8,2),
-//   status text default 'active' check (status in ('active','completed','on_hold')),
-//   created_by uuid references profiles(id),
-//   created_at timestamptz default now()
-// );
-//
-// -- Project time entries
-// create table project_entries (
-//   id uuid default gen_random_uuid() primary key,
-//   user_id uuid references profiles(id) on delete cascade,
-//   project_id uuid references projects(id) on delete cascade,
-//   punch_in timestamptz not null,
-//   punch_out timestamptz,
-//   hours numeric(6,2),
-//   billable boolean default true,
-//   note text,
-//   created_at timestamptz default now()
-// );
-//
 // -- Row Level Security policies
 // alter table profiles enable row level security;
 // alter table punches enable row level security;
 // alter table leave_requests enable row level security;
-// alter table projects enable row level security;
-// alter table project_entries enable row level security;
 //
 // -- IMPORTANT:
 // -- Do not make a profiles policy query profiles directly inside its USING clause.
@@ -113,7 +100,7 @@ export const supabase = createClient(
 // as $$
 //   select exists (
 //     select 1 from public.profiles
-//     where id = auth.uid() and role in ('admin', 'manager')
+//     where id = auth.uid() and role in ('admin', 'ceo', 'cto', 'cfo', 'manager')
 //   );
 // $$;
 //
@@ -125,7 +112,3 @@ export const supabase = createClient(
 // create policy "Managers see all punches" on punches for select using (public.is_admin_or_manager());
 // create policy "Users manage own leave" on leave_requests for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 // create policy "Managers manage all leave" on leave_requests for all using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
-// create policy "All see projects" on projects for select using (true);
-// create policy "Admins manage projects" on projects for all using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
-// create policy "Users manage own entries" on project_entries for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-// create policy "Managers see all entries" on project_entries for select using (public.is_admin_or_manager());

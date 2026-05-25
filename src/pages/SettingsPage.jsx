@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { User, Shield, Save, CheckCircle, AlertCircle, Building2, ScanFace } from "lucide-react";
 import FaceCaptureField from "../components/FaceCaptureField";
-import { DEPARTMENT_OPTIONS } from "../lib/workforce";
+import { DEPARTMENT_OPTIONS, getRoleLabel } from "../lib/workforce";
 
 export default function SettingsPage() {
   const { profile, updateAccount, user } = useAuth();
@@ -82,7 +82,7 @@ export default function SettingsPage() {
           <div>
             <p className="text-white font-medium">{form.full_name || "Your Name"}</p>
             <p className="text-slate-500 text-sm">{user?.email}</p>
-            <span className="badge-blue badge text-xs capitalize mt-1">{profile?.role}</span>
+            <span className="badge-blue badge text-xs mt-1">{getRoleLabel(profile?.role)}</span>
           </div>
         </div>
 
@@ -152,7 +152,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between py-2 border-b border-slate-800">
             <span className="text-slate-400 text-sm">Role</span>
-            <span className="text-white text-sm capitalize">{profile?.role}</span>
+            <span className="text-white text-sm">{getRoleLabel(profile?.role)}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-slate-800">
             <span className="text-slate-400 text-sm">Company</span>

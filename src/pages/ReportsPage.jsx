@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { format, parseISO, differenceInMinutes, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { format, parseISO, differenceInMinutes, startOfMonth, subMonths } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { Download, BarChart2 } from "lucide-react";
+import { Download } from "lucide-react";
+import AttendanceChartsSection from "../components/AttendanceChartsSection";
+import { buildAttendanceSeries } from "../lib/attendanceAnalytics";
+import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
+import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
+import { hasManagementAccess } from "../lib/workforce";
 
 const COLORS = ["#00e5be", "#60a5fa", "#fbbf24", "#ff4d6d", "#a78bfa"];
 
@@ -31,38 +36,118 @@ export default function ReportsPage() {
   const [byDay, setByDay] = useState([]);
   const [stats, setStats] = useState({ total: 0, avg: 0, overtime: 0, days: 0 });
   const [loading, setLoading] = useState(true);
-  const isAdmin = profile?.role === "admin" || profile?.role === "manager";
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceOverview, setAttendanceOverview] = useState({ dailyData: [], monthlyData: [] });
+  const isAdmin = hasManagementAccess(profile?.role);
 
-  useEffect(() => { fetchReports(); }, [profile]);
+  useEffect(() => { void fetchReports(); }, [profile?.id, isAdmin]);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      return undefined;
+    }
+
+    const channel = createAttendanceRealtimeChannel({
+      channelName: `reports-${profile.id}-${isAdmin ? "management" : "self"}`,
+      profileId: profile.id,
+      isManagement: isAdmin,
+      onChange: () => {
+        void fetchReports();
+      },
+    });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.id, isAdmin]);
 
   async function fetchReports() {
-    if (!profile) return;
-    const sixMonthsAgo = subMonths(new Date(), 6);
-
-    const { data } = await supabase
-      .from("punches")
-      .select("*")
-      .eq("user_id", profile.id)
-      .gte("timestamp", sixMonthsAgo.toISOString())
-      .order("timestamp", { ascending: true });
-
-    if (!data) { setLoading(false); return; }
-
-    // Pair punches
-    const pairs = [];
-    let lastIn = null;
-    for (const p of data) {
-      if (p.type === "in") lastIn = p;
-      else if (p.type === "out" && lastIn) {
-        pairs.push({
-          date: format(parseISO(lastIn.timestamp), "yyyy-MM-dd"),
-          month: format(parseISO(lastIn.timestamp), "MMM yyyy"),
-          day: format(parseISO(lastIn.timestamp), "EEE"),
-          minutes: differenceInMinutes(parseISO(p.timestamp), parseISO(lastIn.timestamp)),
-        });
-        lastIn = null;
-      }
+    if (!profile?.id) {
+      setMonthlyData([]);
+      setByDay([]);
+      setStats({ total: 0, avg: 0, overtime: 0, days: 0 });
+      setAttendanceOverview({ dailyData: [], monthlyData: [] });
+      setLoading(false);
+      setAttendanceLoading(false);
+      return;
     }
+
+    setLoading(true);
+    setAttendanceLoading(isAdmin);
+    const now = new Date();
+    const sixMonthsAgo = startOfMonth(subMonths(now, 5));
+
+    const [
+      { data, error },
+      { data: workforceProfiles, error: workforceProfilesError },
+      { data: workforcePunches, error: workforcePunchesError },
+      { data: members, error: membersError },
+      { data: memberEntries, error: memberEntriesError },
+    ] = await Promise.all([
+      isAdmin
+        ? supabase
+          .from("punches")
+          .select("*")
+          .gte("timestamp", sixMonthsAgo.toISOString())
+          .order("timestamp", { ascending: true })
+        : supabase
+          .from("punches")
+          .select("*")
+          .eq("user_id", profile.id)
+          .gte("timestamp", sixMonthsAgo.toISOString())
+          .order("timestamp", { ascending: true }),
+      isAdmin
+        ? supabase.from("profiles").select("id")
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("punches")
+          .select("user_id, timestamp")
+          .gte("timestamp", sixMonthsAgo.toISOString())
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase.from("members").select("id")
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("member_entries")
+          .select("id, member_id, punch_in, punch_out, hours, note, location_name, members(full_name)")
+          .gte("punch_in", sixMonthsAgo.toISOString())
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (isAdmin && !workforceProfilesError && !workforcePunchesError && !membersError && !memberEntriesError) {
+      setAttendanceOverview(buildAttendanceSeries({
+        profiles: workforceProfiles || [],
+        members: members || [],
+        punches: workforcePunches || [],
+        memberEntries: memberEntries || [],
+        now,
+      }));
+    } else {
+      setAttendanceOverview({ dailyData: [], monthlyData: [] });
+    }
+
+    setAttendanceLoading(false);
+
+    if (error || !data) { setLoading(false); return; }
+
+    const pairs = [
+      ...buildPunchSessions(data).map((session) => ({
+        date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
+        month: format(parseISO(session.clockIn), "MMM yyyy"),
+        day: format(parseISO(session.clockIn), "EEE"),
+        minutes: session.minutes,
+        clockIn: session.clockIn,
+      })),
+      ...buildMemberSessions(memberEntries || []).map((session) => ({
+        date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
+        month: format(parseISO(session.clockIn), "MMM yyyy"),
+        day: format(parseISO(session.clockIn), "EEE"),
+        minutes: session.minutes,
+        clockIn: session.clockIn,
+      })),
+    ].sort((left, right) => new Date(left.clockIn).getTime() - new Date(right.clockIn).getTime());
 
     // Monthly totals
     const byMonth = {};
@@ -85,7 +170,7 @@ export default function ReportsPage() {
     setByDay(days);
 
     // Current month stats
-    const thisMonthStart = startOfMonth(new Date());
+    const thisMonthStart = startOfMonth(now);
     const thisMonth = pairs.filter(p => new Date(p.date) >= thisMonthStart);
     const totalMin = thisMonth.reduce((s, p) => s + p.minutes, 0);
     const uniqueDays = new Set(thisMonth.map(p => p.date)).size;
@@ -121,6 +206,16 @@ export default function ReportsPage() {
           </div>
         ))}
       </div>
+
+      {isAdmin && (
+        <AttendanceChartsSection
+          title="Attendance Reports"
+          description="Headcount trends for attendees and absentees across recorded employee and member clock activity."
+          dailyData={attendanceOverview.dailyData}
+          monthlyData={attendanceOverview.monthlyData}
+          loading={attendanceLoading}
+        />
+      )}
 
       {/* Charts */}
       <div className="grid lg:grid-cols-3 gap-4 animate-fade-up">

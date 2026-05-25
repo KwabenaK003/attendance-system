@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
@@ -6,42 +6,58 @@ import DashboardPage from "./pages/DashboardPage";
 import ClockPage from "./pages/ClockPage";
 import TimesheetsPage from "./pages/TimesheetsPage";
 import LeavePage from "./pages/LeavePage";
-import ProjectsPage from "./pages/ProjectsPage";
 import ReportsPage from "./pages/ReportsPage";
-import EmployeesPage from "./pages/EmployeesPage";
 import SettingsPage from "./pages/SettingsPage";
+import MembersPage from "./pages/MembersPage";
+import { getSafeRedirectPath, withRedirect } from "./lib/authRedirect";
+import { hasManagementAccess } from "./lib/workforce";
 
-function ProtectedRoute({ children, adminOnly = false }) {
-  const { user, profile, loading } = useAuth();
-  if (loading) return (
+function LoadingScreen() {
+  return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
     </div>
   );
-  if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && !["admin", "manager"].includes(profile?.role)) return <Navigate to="/dashboard" replace />;
-  return <Layout>{children}</Layout>;
+}
+
+function RequireAuth({ children, adminOnly = false, withLayout = true }) {
+  const { user, profile, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) {
+    const redirectPath = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={withRedirect("/login", redirectPath)} replace />;
+  }
+  if (adminOnly && !hasManagementAccess(profile?.role)) return <Navigate to="/dashboard" replace />;
+  return withLayout ? <Layout>{children}</Layout> : children;
+}
+
+function AuthPageRoute({ mode = "signin" }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <LoadingScreen />;
+  if (user) return <Navigate to={getSafeRedirectPath(location.search)} replace />;
+
+  return <LoginPage mode={mode} />;
 }
 
 function AppRoutes() {
-  const { user, loading } = useAuth();
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-    </div>
-  );
-
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/clock" element={<ProtectedRoute><ClockPage /></ProtectedRoute>} />
-      <Route path="/timesheets" element={<ProtectedRoute><TimesheetsPage /></ProtectedRoute>} />
-      <Route path="/leave" element={<ProtectedRoute><LeavePage /></ProtectedRoute>} />
-      <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
-      <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
-      <Route path="/employees" element={<ProtectedRoute adminOnly><EmployeesPage /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+      <Route path="/login" element={<AuthPageRoute />} />
+      <Route path="/register" element={<AuthPageRoute mode="register" />} />
+      <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+      <Route path="/clock/station" element={<RequireAuth adminOnly withLayout={false}><ClockPage standalone /></RequireAuth>} />
+      <Route path="/clock" element={<RequireAuth><ClockPage /></RequireAuth>} />
+      <Route path="/timesheets" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
+      <Route path="/leave" element={<RequireAuth><LeavePage /></RequireAuth>} />
+      <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
+      <Route path="/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
+      <Route path="/users" element={<Navigate to="/members" replace />} />
+      <Route path="/employees" element={<Navigate to="/members" replace />} />
+      <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );

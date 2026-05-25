@@ -22,6 +22,7 @@ function buildResolvedProfile(authUser, currentProfile = null) {
     department: currentProfile?.department ?? authUser?.user_metadata?.department ?? "",
     company_name: currentProfile?.company_name ?? authUser?.user_metadata?.company_name ?? "",
     face_reference: currentProfile?.face_reference ?? authUser?.user_metadata?.face_reference ?? null,
+    hourly_rate: currentProfile?.hourly_rate ?? authUser?.user_metadata?.hourly_rate ?? 0,
   };
 }
 
@@ -93,6 +94,7 @@ export function AuthProvider({ children }) {
       department: authUser.user_metadata?.department || "",
       company_name: authUser.user_metadata?.company_name || "",
       face_reference: authUser.user_metadata?.face_reference || null,
+      hourly_rate: Number(authUser.user_metadata?.hourly_rate || 0),
     };
 
     let { data: createdProfile, error: createError } = await supabase
@@ -109,6 +111,7 @@ export function AuthProvider({ children }) {
           full_name: profileSeed.full_name,
           role: profileSeed.role,
           department: profileSeed.department,
+          hourly_rate: profileSeed.hourly_rate,
         })
         .select()
         .single());
@@ -152,6 +155,7 @@ export function AuthProvider({ children }) {
     companyName,
     department,
     faceReference,
+    hourlyRate,
   }) {
     assertSupabaseConfigured();
 
@@ -165,6 +169,7 @@ export function AuthProvider({ children }) {
           company_name: companyName,
           department,
           face_reference: faceReference || null,
+          hourly_rate: Number(hourlyRate || 0),
         },
       },
     });
@@ -225,6 +230,7 @@ export function AuthProvider({ children }) {
       ...(updates.department !== undefined ? { department: updates.department } : {}),
       ...(updates.company_name !== undefined ? { company_name: updates.company_name } : {}),
       ...(updates.face_reference !== undefined ? { face_reference: updates.face_reference } : {}),
+      ...(updates.hourly_rate !== undefined ? { hourly_rate: updates.hourly_rate } : {}),
     };
 
     const { data, error } = await supabase.auth.updateUser({ data: metadata });

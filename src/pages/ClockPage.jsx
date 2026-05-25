@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { format, parseISO, differenceInSeconds } from "date-fns";
+import { differenceInMinutes, differenceInSeconds, format, parseISO } from "date-fns";
 import {
   Clock,
+  Copy,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -20,13 +21,8 @@ import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { supabase } from "../lib/supabase";
 import { getDeviceMetadata, getNetworkMetadata, getPublicIpAddress } from "../lib/clockMetadata";
-import { compareFaceReferences, captureVideoFrame, createFaceReference, waitForVideoReady } from "../lib/faceVerification";
-
-const ROLE_LABELS = {
-  employee: "Employee",
-  manager: "Manager",
-  admin: "Admin",
-};
+import { compareFaceReferences, captureVideoFrame, createFaceReference, normalizeFaceReference, waitForVideoReady } from "../lib/faceVerification";
+import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 
 function LiveClock() {
   const [time, setTime] = useState(new Date());
@@ -72,16 +68,41 @@ function buildFallbackEmployee(profile) {
 
   return {
     id: profile.id,
+    kind: "staff",
     full_name: profile.full_name || "Current User",
     role: profile.role || "employee",
+    department: profile.department || "",
     face_reference: profile.face_reference || null,
   };
 }
 
-function sortEmployees(employees) {
-  return [...employees].sort((left, right) => {
-    const leftName = left.full_name?.trim().toLowerCase() || "";
-    const rightName = right.full_name?.trim().toLowerCase() || "";
+function normalizeStaffMember(employee) {
+  return {
+    ...employee,
+    kind: "staff",
+  };
+}
+
+function normalizeMember(member) {
+  return {
+    ...member,
+    kind: "member",
+    role: member.role || "employee",
+  };
+}
+
+function buildPersonKey(person) {
+  return person?.id ? `${person.kind}:${person.id}` : "";
+}
+
+function getPersonTypeLabel(person) {
+  return person?.kind === "member" ? "Member" : "Employee";
+}
+
+function sortPeople(people) {
+  return [...people].sort((left, right) => {
+    const leftName = left.full_name?.trim()?.toLowerCase() || "";
+    const rightName = right.full_name?.trim()?.toLowerCase() || "";
     return leftName.localeCompare(rightName);
   });
 }
@@ -91,7 +112,7 @@ function mergeEmployees(employees, currentProfile) {
 
   for (const employee of employees || []) {
     if (employee?.id) {
-      merged.set(employee.id, employee);
+      merged.set(employee.id, normalizeStaffMember(employee));
     }
   }
 
@@ -103,17 +124,17 @@ function mergeEmployees(employees, currentProfile) {
     });
   }
 
-  return sortEmployees(Array.from(merged.values()));
+  return sortPeople(Array.from(merged.values()));
 }
 
-function buildPunchNote({ employee, similarity, locationName, deviceName, networkName, ipAddress }) {
+function buildPunchNote({ person, similarity, locationName, deviceName, networkName, ipAddress }) {
   const parts = [
     "Method: Face Clock",
-    `Employee: ${employee.full_name || "Unknown"}`,
+    `${getPersonTypeLabel(person)}: ${person.full_name || "Unknown"}`,
   ];
 
-  if (employee.role) {
-    parts.push(`Role: ${ROLE_LABELS[employee.role] || employee.role}`);
+  if (person.role) {
+    parts.push(`Role: ${getRoleLabel(person.role)}`);
   }
 
   if (typeof similarity === "number") {
@@ -164,36 +185,44 @@ async function insertPunchRecord(payload) {
   return { usedFallbackColumns: true };
 }
 
-function SearchResultButton({ employee, onSelect }) {
+function SearchResultButton({ person, onSelect }) {
   return (
     <button
       type="button"
-      onClick={() => onSelect(employee)}
+      onClick={() => onSelect(person)}
       className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-slate-900"
     >
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
           <UserRound className="w-4 h-4" />
         </div>
-        <div className="min-w-0">
-          <p className="text-white font-medium truncate">{employee.full_name || "Unknown employee"}</p>
-          <p className="text-slate-500 text-xs">{ROLE_LABELS[employee.role] || "Employee"}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-white font-medium truncate">{person.full_name || "Unknown person"}</p>
+            <span className={`badge text-[10px] uppercase tracking-wide ${person.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
+              {getPersonTypeLabel(person)}
+            </span>
+          </div>
+          <p className="text-slate-500 text-xs">
+            {getRoleLabel(person.role)}
+            {person.department ? ` • ${person.department}` : ""}
+          </p>
         </div>
       </div>
     </button>
   );
 }
 
-export default function ClockPage() {
+export default function ClockPage({ standalone = false }) {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [employees, setEmployees] = useState([]);
-  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [staffEmployees, setStaffEmployees] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedPersonKey, setSelectedPersonKey] = useState("");
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
@@ -202,18 +231,56 @@ export default function ClockPage() {
   const [faceBusy, setFaceBusy] = useState(false);
   const [facePreview, setFacePreview] = useState(null);
   const [lastCapturedDetails, setLastCapturedDetails] = useState(null);
+  const [stationLinkCopied, setStationLinkCopied] = useState(false);
+
+  const people = sortPeople([...staffEmployees, ...members]);
+  const selectedPerson = people.find((person) => buildPersonKey(person) === selectedPersonKey) || null;
+  const isManagementUser = hasManagementAccess(profile?.role);
+  const selectedFaceReference = normalizeFaceReference(
+    selectedPerson?.face_reference || (selectedPerson?.kind === "staff" && selectedPerson.id === profile?.id ? profile?.face_reference : null)
+  );
+  const isClockedIn = Boolean(status);
+  const actionLabel = isClockedIn ? "Clock Out" : "Clock In";
+  const normalizedQuery = searchTerm.trim().toLowerCase();
+  const searchResults = normalizedQuery
+    ? people.filter((person) => {
+      const searchText = [
+        person.full_name || "",
+        person.department || "",
+        getRoleLabel(person.role),
+      ].join(" ").toLowerCase();
+
+      return searchText.includes(normalizedQuery);
+    })
+    : [];
+  const showSearchResults = Boolean(normalizedQuery)
+    && normalizedQuery !== (selectedPerson?.full_name?.trim()?.toLowerCase() || "");
+  const stationUrl = typeof window === "undefined"
+    ? "/clock/station"
+    : new URL("/clock/station", window.location.origin).toString();
+  const stationHost = typeof window === "undefined" ? "" : window.location.hostname;
+  const stationUsesLocalhost = stationHost === "localhost" || stationHost === "127.0.0.1";
 
   useEffect(() => {
-    setEmployees((currentEmployees) => mergeEmployees(currentEmployees, profile));
+    if (!stationLinkCopied) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setStationLinkCopied(false), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [stationLinkCopied]);
+
+  useEffect(() => {
+    setStaffEmployees((currentEmployees) => mergeEmployees(currentEmployees, profile));
   }, [profile]);
 
   useEffect(() => {
-    void loadEmployees();
+    void loadPeople();
   }, [profile?.id]);
 
   useEffect(() => {
-    void fetchStatus();
-  }, [selectedUserId]);
+    void fetchStatus(selectedPerson);
+  }, [selectedPersonKey, staffEmployees, members]);
 
   useEffect(() => {
     return () => {
@@ -254,39 +321,93 @@ export default function ClockPage() {
     };
   }, [cameraOpen]);
 
-  async function loadEmployees() {
+  async function loadPeople() {
     if (!profile?.id) {
-      setEmployees([]);
-      setSelectedUserId("");
+      setStaffEmployees([]);
+      setMembers([]);
+      setSelectedPersonKey("");
       return;
     }
 
-    setEmployeesLoading(true);
+    setPeopleLoading(true);
 
     try {
-      const { data, error } = await supabase.from("profiles").select("*").order("full_name");
-      if (error) throw error;
+      const [staffResult, membersResult] = await Promise.allSettled([
+        supabase.from("profiles").select("*").order("full_name"),
+        supabase.from("members").select("id, full_name, role, department, face_reference").order("full_name"),
+      ]);
 
-      setEmployees(mergeEmployees(data || [], profile));
-    } catch (err) {
-      const fallbackEmployee = buildFallbackEmployee(profile);
-      setEmployees(fallbackEmployee ? [fallbackEmployee] : []);
-      setMessage({ type: "error", text: err.message || "Unable to load employees for the face clock." });
+      let nextStaffEmployees = mergeEmployees([], profile);
+      let nextMembers = [];
+      const errors = [];
+
+      if (staffResult.status === "fulfilled") {
+        if (staffResult.value.error) {
+          errors.push(staffResult.value.error.message || "Unable to load employees.");
+        } else {
+          nextStaffEmployees = mergeEmployees(staffResult.value.data || [], profile);
+        }
+      } else {
+        errors.push(staffResult.reason?.message || "Unable to load employees.");
+      }
+
+      if (membersResult.status === "fulfilled") {
+        if (membersResult.value.error) {
+          errors.push(membersResult.value.error.message || "Unable to load members.");
+        } else {
+          nextMembers = sortPeople((membersResult.value.data || []).map(normalizeMember));
+        }
+      } else {
+        errors.push(membersResult.reason?.message || "Unable to load members.");
+      }
+
+      setStaffEmployees(nextStaffEmployees);
+      setMembers(nextMembers);
+
+      if (selectedPersonKey) {
+        const nextPeople = sortPeople([...nextStaffEmployees, ...nextMembers]);
+        const selectionStillExists = nextPeople.some((person) => buildPersonKey(person) === selectedPersonKey);
+        if (!selectionStillExists) {
+          setSelectedPersonKey("");
+        }
+      }
+
+      if (errors.length) {
+        setMessage({ type: "error", text: errors.join(" ") });
+      }
     } finally {
-      setEmployeesLoading(false);
+      setPeopleLoading(false);
     }
   }
 
-  async function fetchStatus() {
-    if (!selectedUserId) {
+  async function fetchStatus(person) {
+    if (!person?.id) {
       setStatus(null);
+      return;
+    }
+
+    if (person.kind === "member") {
+      const { data, error } = await supabase
+        .from("member_entries")
+        .select("*")
+        .eq("member_id", person.id)
+        .order("punch_in", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        setMessage({ type: "error", text: error.message || "Failed to load clock status" });
+        return;
+      }
+
+      const lastEntry = data?.[0];
+      setStatus(lastEntry && !lastEntry.punch_out ? lastEntry : null);
       return;
     }
 
     const { data, error } = await supabase
       .from("punches")
       .select("*")
-      .eq("user_id", selectedUserId)
+      .eq("user_id", person.id)
       .order("timestamp", { ascending: false })
       .limit(1);
 
@@ -299,35 +420,23 @@ export default function ClockPage() {
     setStatus(lastPunch?.type === "in" ? lastPunch : null);
   }
 
-  function runEmployeeSearch() {
-    const query = searchTerm.trim().toLowerCase();
-
-    if (!query) {
-      setSearchResults([]);
-      setSelectedUserId("");
-      setFacePreview(null);
-      setLastCapturedDetails(null);
-      stopFaceCamera();
-      setMessage({ type: "error", text: "Enter a name to search for an employee." });
+  function runPersonSearch() {
+    if (!normalizedQuery) {
+      setMessage({ type: "error", text: "Enter a name to search for an employee or member." });
       return;
     }
 
-    const results = employees.filter((employee) =>
-      employee.full_name?.toLowerCase().includes(query)
-    );
+    if (searchResults.length === 1) {
+      handleSelectPerson(searchResults[0]);
+      return;
+    }
 
-    setSearchResults(results);
-    setSelectedUserId("");
-    setFacePreview(null);
-    setLastCapturedDetails(null);
-    stopFaceCamera();
-    setMessage(results.length ? null : { type: "error", text: `No employee found for "${searchTerm.trim()}".` });
+    setMessage(searchResults.length ? null : { type: "error", text: `No employee or member found for "${searchTerm.trim()}".` });
   }
 
-  function handleSelectEmployee(employee) {
-    setSelectedUserId(employee.id);
-    setSearchTerm(employee.full_name || "");
-    setSearchResults([]);
+  function handleSelectPerson(person) {
+    setSelectedPersonKey(buildPersonKey(person));
+    setSearchTerm(person.full_name || "");
     setFacePreview(null);
     setLastCapturedDetails(null);
     setMessage(null);
@@ -367,9 +476,9 @@ export default function ClockPage() {
     setCameraReady(false);
   }
 
-  async function recordPunch({ employee, similarity }) {
-    if (!employee?.id) {
-      setMessage({ type: "error", text: "Select an employee before clocking." });
+  async function recordPunch({ person, similarity }) {
+    if (!person?.id) {
+      setMessage({ type: "error", text: "Select a person before clocking." });
       return;
     }
 
@@ -386,27 +495,65 @@ export default function ClockPage() {
       const device = getDeviceMetadata();
       const network = getNetworkMetadata();
       const type = status ? "out" : "in";
-
-      const insertResult = await insertPunchRecord({
-        user_id: employee.id,
-        type,
-        timestamp: new Date().toISOString(),
-        latitude: location?.latitude || null,
-        longitude: location?.longitude || null,
-        location_name: location?.location_name || null,
-        device_name: device.deviceName,
-        ip_address: ipAddress || null,
-        network_name: network.networkName,
-        verification_method: "face_clock",
-        note: buildPunchNote({
-          employee,
-          similarity,
-          locationName: location?.location_name || null,
-          deviceName: device.deviceName,
-          networkName: network.networkName,
-          ipAddress: ipAddress || null,
-        }),
+      const note = buildPunchNote({
+        person,
+        similarity,
+        locationName: location?.location_name || null,
+        deviceName: device.deviceName,
+        networkName: network.networkName,
+        ipAddress: ipAddress || null,
       });
+
+      if (person.kind === "member") {
+        if (status?.id) {
+          const now = new Date();
+          const hours = differenceInMinutes(now, parseISO(status.punch_in)) / 60;
+          const { error } = await supabase.from("member_entries").update({
+            punch_out: now.toISOString(),
+            hours: parseFloat(hours.toFixed(2)),
+            note,
+          }).eq("id", status.id);
+
+          if (error) {
+            throw error;
+          }
+        } else {
+          const { error } = await supabase.from("member_entries").insert({
+            member_id: person.id,
+            punch_in: new Date().toISOString(),
+            latitude: location?.latitude || null,
+            longitude: location?.longitude || null,
+            location_name: location?.location_name || null,
+            note,
+            created_by: profile?.id || null,
+          });
+
+          if (error) {
+            throw error;
+          }
+        }
+      } else {
+        const insertResult = await insertPunchRecord({
+          user_id: person.id,
+          type,
+          timestamp: new Date().toISOString(),
+          latitude: location?.latitude || null,
+          longitude: location?.longitude || null,
+          location_name: location?.location_name || null,
+          device_name: device.deviceName,
+          ip_address: ipAddress || null,
+          network_name: network.networkName,
+          verification_method: "face_clock",
+          note,
+        });
+
+        setMessage({
+          type: "success",
+          text: insertResult.usedFallbackColumns
+            ? `${person.full_name || "Employee"} successfully clocked ${type}. Device, network, and IP were saved in the punch note; run supabase/enable_shared_face_clock.sql to add dedicated columns.`
+            : `${person.full_name || "Employee"} successfully clocked ${type}.`,
+        });
+      }
 
       setLastCapturedDetails({
         deviceName: device.deviceName,
@@ -417,14 +564,14 @@ export default function ClockPage() {
       });
 
       setFacePreview(null);
-      await fetchStatus();
+      await fetchStatus(person);
 
-      setMessage({
-        type: "success",
-        text: insertResult.usedFallbackColumns
-          ? `${employee.full_name || "Employee"} successfully clocked ${type}. Device, network, and IP were saved in the punch note; run supabase/enable_shared_face_clock.sql to add dedicated columns.`
-          : `${employee.full_name || "Employee"} successfully clocked ${type}.`,
-      });
+      if (person.kind === "member") {
+        setMessage({
+          type: "success",
+          text: `${person.full_name || "Member"} successfully clocked ${type}.`,
+        });
+      }
     } catch (err) {
       setMessage({ type: "error", text: err.message || "Failed to punch" });
     } finally {
@@ -433,17 +580,17 @@ export default function ClockPage() {
   }
 
   async function handleFacePunch() {
-    if (!selectedEmployee?.id) {
-      setMessage({ type: "error", text: "Search for and select an employee first." });
+    if (!selectedPerson?.id) {
+      setMessage({ type: "error", text: "Search for and select an employee or member first." });
       return;
     }
 
     if (!selectedFaceReference) {
       setMessage({
         type: "error",
-        text: selectedEmployee.id === profile?.id
+        text: selectedPerson.kind === "staff" && selectedPerson.id === profile?.id
           ? "Enroll your face in Settings before using the face clock."
-          : `${selectedEmployee.full_name || "This employee"} does not have a saved face enrollment yet.`,
+          : `${selectedPerson.full_name || "This person"} does not have a saved face enrollment yet.`,
       });
       return;
     }
@@ -469,11 +616,11 @@ export default function ClockPage() {
       setFacePreview(photo);
 
       if (!comparison.matched) {
-        throw new Error(`Face verification failed for ${selectedEmployee.full_name || "the selected employee"}. Match confidence was ${Math.round(comparison.similarity * 100)}%.`);
+        throw new Error(`Face verification failed for ${selectedPerson.full_name || "the selected person"}. Match confidence was ${Math.round(comparison.similarity * 100)}%.`);
       }
 
       await recordPunch({
-        employee: selectedEmployee,
+        person: selectedPerson,
         similarity: comparison.similarity,
       });
 
@@ -485,18 +632,52 @@ export default function ClockPage() {
     }
   }
 
-  const selectedEmployee = employees.find((employee) => employee.id === selectedUserId)
-    || (selectedUserId === profile?.id ? buildFallbackEmployee(profile) : null);
-  const selectedFaceReference = selectedEmployee?.face_reference || (selectedEmployee?.id === profile?.id ? profile?.face_reference : null);
-  const isClockedIn = Boolean(status);
-  const actionLabel = isClockedIn ? "Clock Out" : "Clock In";
+  async function copyStationLink() {
+    try {
+      await navigator.clipboard.writeText(stationUrl);
+      setStationLinkCopied(true);
+    } catch (error) {
+      setMessage({ type: "error", text: error.message || "Unable to copy the shared clock link." });
+    }
+  }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className={`mx-auto space-y-6 ${standalone ? "max-w-5xl px-4 py-6 sm:px-6" : "max-w-4xl"}`}>
       <div className="animate-fade-up">
         <h2 className="font-display font-bold text-2xl text-white">Time Clock</h2>
-        <p className="text-slate-400 text-sm mt-1">Search for an employee, select their name, then complete face verification to record the punch with device, IP, network, date, time, and location.</p>
+        <p className="text-slate-400 text-sm mt-1">
+          Search for an employee or member, select their name, then complete face verification to record the punch with device, IP, network, date, time, and location.
+        </p>
       </div>
+
+      {!standalone && isManagementUser && (
+        <div className="card p-5 animate-fade-up border-accent/20">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <h3 className="font-display font-semibold text-white">Shared Tablet Clock Link</h3>
+              <p className="text-slate-400 text-sm mt-1">
+                Open this link on the tablet to use a dedicated shared clock screen. Punches from that device save into the same Supabase records used by the dashboard, timesheets, and reports.
+              </p>
+            </div>
+            <Link to="/clock/station" className="btn-secondary text-sm">
+              Preview Tablet View
+            </Link>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input className="input flex-1 font-mono text-sm" value={stationUrl} readOnly />
+            <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2 sm:w-auto">
+              <Copy className="w-4 h-4" />
+              {stationLinkCopied ? "Copied" : "Copy Link"}
+            </button>
+          </div>
+          <div className="mt-3 space-y-1 text-xs text-slate-500">
+            <p>Sign in on the tablet with an admin, executive, or manager account once, then leave this shared clock page open for staff use.</p>
+            {stationUsesLocalhost && (
+              <p>If you are still using `localhost`, replace it with your deployed site URL or your computer&apos;s local network IP before opening the link on another device.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="card p-8 text-center animate-fade-up">
         <LiveClock />
@@ -516,28 +697,31 @@ export default function ClockPage() {
 
         <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
           <div>
-            <label className="label">Search Employee</label>
+            <label className="label">Search Employee or Member</label>
             <div className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   className="input pl-10"
                   value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
+                  onChange={(event) => {
+                    setSearchTerm(event.target.value);
+                    setMessage(null);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      runEmployeeSearch();
+                      runPersonSearch();
                     }
                   }}
-                  placeholder={employeesLoading ? "Loading employees..." : "Search by full name"}
-                  disabled={employeesLoading || loading || faceBusy}
+                  placeholder={peopleLoading ? "Loading people..." : "Search by name, department, or role"}
+                  disabled={peopleLoading || loading || faceBusy}
                 />
               </div>
               <button
                 type="button"
-                onClick={runEmployeeSearch}
-                disabled={employeesLoading || loading || faceBusy}
+                onClick={runPersonSearch}
+                disabled={peopleLoading || loading || faceBusy}
                 className="btn-secondary flex items-center gap-2"
               >
                 <Search className="w-4 h-4" />
@@ -546,11 +730,15 @@ export default function ClockPage() {
             </div>
           </div>
 
-          {searchResults.length > 0 && (
+          {showSearchResults && (
             <div className="space-y-2">
-              {searchResults.map((employee) => (
-                <SearchResultButton key={employee.id} employee={employee} onSelect={handleSelectEmployee} />
-              ))}
+              {searchResults.length > 0 ? searchResults.map((person) => (
+                <SearchResultButton key={buildPersonKey(person)} person={person} onSelect={handleSelectPerson} />
+              )) : (
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
+                  No employee or member found for "{searchTerm.trim()}".
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -576,16 +764,19 @@ export default function ClockPage() {
           </div>
         )}
 
-        {selectedEmployee ? (
+        {selectedPerson ? (
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-4 max-w-xl mx-auto text-left">
-              <div className="flex items-center gap-3 text-white">
+              <div className="flex items-center gap-3 text-white flex-wrap">
                 <UserRound className="w-4 h-4 text-accent" />
-                <span className="font-medium">{selectedEmployee.full_name || "Unknown employee"}</span>
-                <span className="badge-blue badge text-[10px] uppercase tracking-wide">{ROLE_LABELS[selectedEmployee.role] || "Employee"}</span>
+                <span className="font-medium">{selectedPerson.full_name || "Unknown person"}</span>
+                <span className={`badge text-[10px] uppercase tracking-wide ${selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
+                  {getPersonTypeLabel(selectedPerson)}
+                </span>
+                <span className="badge-blue badge text-[10px] uppercase tracking-wide">{getRoleLabel(selectedPerson.role)}</span>
               </div>
               <p className="text-slate-500 text-xs mt-2">
-                Face verification will be checked against this employee's enrolled face reference.
+                Face verification will be checked against the selected person's enrolled face reference.
               </p>
             </div>
 
@@ -593,14 +784,14 @@ export default function ClockPage() {
               <div className="mb-2">
                 <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
                 <p className="text-slate-300 text-sm">
-                  {selectedEmployee.full_name || "Selected employee"} has been clocked in for <ElapsedTimer since={status.timestamp} />
+                  {selectedPerson.full_name || "Selected person"} has been clocked in for {selectedPerson.kind === "member" ? <ElapsedTimer since={status.punch_in} /> : <ElapsedTimer since={status.timestamp} />}
                 </p>
               </div>
             ) : (
               <div className="mb-2">
                 <div className="badge-red mx-auto w-fit mb-2">NOT CLOCKED IN</div>
                 <p className="text-slate-500 text-sm">
-                  Start face verification to clock {selectedEmployee.full_name || "this employee"} in or out.
+                  Start face verification to clock {selectedPerson.full_name || "this person"} in or out.
                 </p>
               </div>
             )}
@@ -608,7 +799,7 @@ export default function ClockPage() {
             {!selectedFaceReference && (
               <div className="card p-4 text-left bg-warn/10 border-warn/20 max-w-xl mx-auto">
                 <p className="text-warn text-sm">
-                  {selectedEmployee?.id === profile?.id ? (
+                  {selectedPerson.kind === "staff" && selectedPerson.id === profile?.id ? (
                     <>
                       Face Clock needs a saved face enrollment first.
                       {" "}
@@ -617,7 +808,7 @@ export default function ClockPage() {
                       to add one.
                     </>
                   ) : (
-                    `${selectedEmployee.full_name || "This employee"} needs a saved face enrollment before using the face clock.`
+                    `${selectedPerson.full_name || "This person"} needs a saved face enrollment before using the face clock.`
                   )}
                 </p>
               </div>
@@ -631,7 +822,7 @@ export default function ClockPage() {
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-6">
                   <Camera className="w-10 h-10 mb-3 text-slate-600" />
-                  <p className="text-sm">Center the selected employee and look straight ahead.</p>
+                  <p className="text-sm">Center the selected person and look straight ahead.</p>
                 </div>
               )}
             </div>
@@ -654,7 +845,7 @@ export default function ClockPage() {
                 {(loading || geoLoading || faceBusy) ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> {cameraOpen ? "Verifying..." : "Opening camera..."}</>
                 ) : (
-                  <><ScanFace className="w-5 h-5" /> {cameraOpen ? (cameraReady ? `${actionLabel} ${selectedEmployee.full_name || ""}` : "Preparing Camera...") : `Start ${actionLabel}`}</>
+                  <><ScanFace className="w-5 h-5" /> {cameraOpen ? (cameraReady ? `${actionLabel} ${selectedPerson.full_name || ""}` : "Preparing Camera...") : `Start ${actionLabel}`}</>
                 )}
               </button>
               {cameraOpen && (
@@ -679,7 +870,7 @@ export default function ClockPage() {
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 max-w-xl mx-auto px-6 py-8 text-slate-500">
-            Search for an employee name above, then select the correct result to open the face clock.
+            Search for an employee or member name above, then select the correct result to open the face clock.
           </div>
         )}
       </div>

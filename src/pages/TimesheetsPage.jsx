@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { format, parseISO, startOfMonth, endOfMonth, differenceInMinutes, subMonths, addMonths } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { ChevronLeft, ChevronRight, Download, Clock } from "lucide-react";
+import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
+import { hasManagementAccess } from "../lib/workforce";
+import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
 
 function formatDuration(minutes) {
   const h = Math.floor(minutes / 60);
@@ -16,8 +19,28 @@ export default function TimesheetsPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalMinutes, setTotalMinutes] = useState(0);
+  const isAdmin = hasManagementAccess(profile?.role);
 
-  useEffect(() => { fetchTimesheets(); }, [profile, currentMonth]);
+  useEffect(() => { fetchTimesheets(); }, [profile?.id, profile?.role, currentMonth]);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      return undefined;
+    }
+
+    const channel = createAttendanceRealtimeChannel({
+      channelName: `timesheets-${profile.id}-${format(currentMonth, "yyyy-MM")}-${isAdmin ? "management" : "self"}`,
+      profileId: profile.id,
+      isManagement: isAdmin,
+      onChange: () => {
+        void fetchTimesheets();
+      },
+    });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [profile?.id, currentMonth, isAdmin]);
 
   async function fetchTimesheets() {
     if (!profile) return;
@@ -25,59 +48,76 @@ export default function TimesheetsPage() {
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
 
-    const { data } = await supabase
-      .from("punches")
-      .select("*")
-      .eq("user_id", profile.id)
-      .gte("timestamp", start.toISOString())
-      .lte("timestamp", end.toISOString())
-      .order("timestamp", { ascending: true });
+    const [
+      { data: punchData },
+      { data: profileRows },
+      { data: memberEntries },
+    ] = await Promise.all([
+      isAdmin
+        ? supabase
+          .from("punches")
+          .select("*")
+          .gte("timestamp", start.toISOString())
+          .lte("timestamp", end.toISOString())
+          .order("timestamp", { ascending: true })
+        : supabase
+          .from("punches")
+          .select("*")
+          .eq("user_id", profile.id)
+          .gte("timestamp", start.toISOString())
+          .lte("timestamp", end.toISOString())
+          .order("timestamp", { ascending: true }),
+      isAdmin
+        ? supabase.from("profiles").select("id, full_name")
+        : Promise.resolve({ data: [] }),
+      isAdmin
+        ? supabase
+          .from("member_entries")
+          .select("id, member_id, punch_in, punch_out, hours, note, location_name, members(full_name)")
+          .gte("punch_in", start.toISOString())
+          .lte("punch_in", end.toISOString())
+          .order("punch_in", { ascending: true })
+        : Promise.resolve({ data: [] }),
+    ]);
 
-    if (!data) { setLoading(false); return; }
+    if (!punchData) { setLoading(false); return; }
 
-    // Pair punches
-    const pairs = [];
-    let lastIn = null;
-    for (const p of data) {
-      if (p.type === "in") { lastIn = p; }
-      else if (p.type === "out" && lastIn) {
-        const minutes = differenceInMinutes(parseISO(p.timestamp), parseISO(lastIn.timestamp));
-        pairs.push({
-          id: lastIn.id,
-          date: format(parseISO(lastIn.timestamp), "yyyy-MM-dd"),
-          clockIn: lastIn.timestamp,
-          clockOut: p.timestamp,
-          minutes,
-          locationIn: lastIn.location_name,
-          locationOut: p.location_name,
-          note: lastIn.note || p.note,
-        });
-        lastIn = null;
-      }
+    const profileNameMap = new Map((profileRows || []).map((person) => [person.id, person.full_name || "Employee"]));
+    if (profile?.id && !profileNameMap.has(profile.id)) {
+      profileNameMap.set(profile.id, profile.full_name || "You");
     }
-    // Active session
-    if (lastIn) {
-      pairs.push({
-        id: lastIn.id,
-        date: format(parseISO(lastIn.timestamp), "yyyy-MM-dd"),
-        clockIn: lastIn.timestamp,
-        clockOut: null,
-        minutes: differenceInMinutes(new Date(), parseISO(lastIn.timestamp)),
-        locationIn: lastIn.location_name,
-        note: lastIn.note,
-        active: true,
-      });
-    }
+
+    const pairs = [
+      ...buildPunchSessions(punchData, {
+        getPersonName: (personId) => profileNameMap.get(personId) || "Employee",
+      }),
+      ...buildMemberSessions(memberEntries || []),
+    ]
+      .map((session) => ({
+        ...session,
+        date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
+      }))
+      .sort((left, right) => new Date(right.clockIn).getTime() - new Date(left.clockIn).getTime());
 
     const total = pairs.reduce((s, p) => s + p.minutes, 0);
     setTotalMinutes(total);
-    setSessions(pairs.reverse());
+    setSessions(pairs);
     setLoading(false);
   }
 
   function exportCSV() {
-    const header = ["Date", "Clock In", "Clock Out", "Duration", "Location In", "Location Out", "Note"];
+    const header = [
+      ...(isAdmin ? ["Person", "Type"] : []),
+      "Date",
+      "Clock In",
+      "Clock Out",
+      "Duration",
+      "Location In",
+      "Location Out",
+      "Note",
+    ];
     const rows = sessions.map((s) => [
+      ...(isAdmin ? [s.personName || "Employee", s.personType] : []),
       s.date,
       format(parseISO(s.clockIn), "HH:mm:ss"),
       s.clockOut ? format(parseISO(s.clockOut), "HH:mm:ss") : "Active",
@@ -104,7 +144,9 @@ export default function TimesheetsPage() {
       <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
         <div>
           <h2 className="font-display font-bold text-2xl text-white">Timesheets</h2>
-          <p className="text-slate-400 text-sm mt-1">Your detailed time records</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {isAdmin ? "Detailed employee and member time records" : "Your detailed time records"}
+          </p>
         </div>
         <button onClick={exportCSV} className="btn-secondary flex items-center gap-2 text-sm">
           <Download className="w-4 h-4" /> Export CSV
@@ -144,6 +186,8 @@ export default function TimesheetsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800">
+                {isAdmin && <th className="table-header px-5 py-3 text-left">Person</th>}
+                {isAdmin && <th className="table-header px-5 py-3 text-left">Type</th>}
                 <th className="table-header px-5 py-3 text-left">Date</th>
                 <th className="table-header px-5 py-3 text-left">Clock In</th>
                 <th className="table-header px-5 py-3 text-left">Clock Out</th>
@@ -154,10 +198,10 @@ export default function TimesheetsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="text-center py-12 text-slate-500">Loading…</td></tr>
+                <tr><td colSpan={isAdmin ? 8 : 6} className="text-center py-12 text-slate-500">Loading…</td></tr>
               ) : sessions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12">
+                  <td colSpan={isAdmin ? 8 : 6} className="text-center py-12">
                     <Clock className="w-8 h-8 text-slate-700 mx-auto mb-2" />
                     <p className="text-slate-500">No time records for this month</p>
                   </td>
@@ -165,6 +209,8 @@ export default function TimesheetsPage() {
               ) : (
                 sessions.map((s) => (
                   <tr key={s.id} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
+                    {isAdmin && <td className="px-5 py-3 font-medium text-white">{s.personName || "Employee"}</td>}
+                    {isAdmin && <td className="px-5 py-3 text-slate-400 text-xs">{s.personType}</td>}
                     <td className="px-5 py-3 font-medium text-white">{format(parseISO(s.clockIn), "EEE, MMM d")}</td>
                     <td className="px-5 py-3 font-mono text-slate-300">{format(parseISO(s.clockIn), "HH:mm")}</td>
                     <td className="px-5 py-3 font-mono text-slate-300">

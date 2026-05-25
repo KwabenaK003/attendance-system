@@ -2,6 +2,74 @@ const REFERENCE_SIZE = 32;
 const MATCH_THRESHOLD = 0.86;
 const FACE_MATCH_THRESHOLD = 0.8;
 
+function isObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function tryParseReference(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function unwrapReference(value) {
+  const parsedValue = tryParseReference(value);
+
+  if (!isObject(parsedValue)) {
+    return parsedValue;
+  }
+
+  if (isObject(parsedValue.reference)) {
+    return unwrapReference(parsedValue.reference);
+  }
+
+  if (isObject(parsedValue.face_reference)) {
+    return unwrapReference(parsedValue.face_reference);
+  }
+
+  if (isObject(parsedValue.faceReference)) {
+    return unwrapReference(parsedValue.faceReference);
+  }
+
+  return parsedValue;
+}
+
+export function normalizeFaceReference(reference) {
+  const unwrappedReference = unwrapReference(reference);
+
+  if (typeof unwrappedReference === "string" && /^[01]+$/.test(unwrappedReference)) {
+    return {
+      hash: unwrappedReference,
+      hasFace: false,
+    };
+  }
+
+  if (!isObject(unwrappedReference)) {
+    return null;
+  }
+
+  if (typeof unwrappedReference.hash === "string" && unwrappedReference.hash.length > 0) {
+    return {
+      ...unwrappedReference,
+      hash: unwrappedReference.hash,
+      hasFace: Boolean(unwrappedReference.hasFace),
+    };
+  }
+
+  return null;
+}
+
 function createCanvas(width, height) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -73,26 +141,30 @@ export async function createFaceReference(dataUrl) {
   return {
     hash: computeHashFromCanvas(canvas),
     hasFace: Boolean(faceBox),
+    version: 1,
     createdAt: new Date().toISOString(),
   };
 }
 
 export function compareFaceReferences(savedReference, liveReference) {
-  if (!savedReference?.hash || !liveReference?.hash) {
+  const normalizedSavedReference = normalizeFaceReference(savedReference);
+  const normalizedLiveReference = normalizeFaceReference(liveReference);
+
+  if (!normalizedSavedReference?.hash || !normalizedLiveReference?.hash) {
     return { similarity: 0, matched: false };
   }
 
-  const totalBits = Math.min(savedReference.hash.length, liveReference.hash.length);
+  const totalBits = Math.min(normalizedSavedReference.hash.length, normalizedLiveReference.hash.length);
   let mismatches = 0;
 
   for (let i = 0; i < totalBits; i += 1) {
-    if (savedReference.hash[i] !== liveReference.hash[i]) {
+    if (normalizedSavedReference.hash[i] !== normalizedLiveReference.hash[i]) {
       mismatches += 1;
     }
   }
 
   const similarity = totalBits ? 1 - (mismatches / totalBits) : 0;
-  const threshold = savedReference.hasFace && liveReference.hasFace ? FACE_MATCH_THRESHOLD : MATCH_THRESHOLD;
+  const threshold = normalizedSavedReference.hasFace && normalizedLiveReference.hasFace ? FACE_MATCH_THRESHOLD : MATCH_THRESHOLD;
 
   return {
     similarity,

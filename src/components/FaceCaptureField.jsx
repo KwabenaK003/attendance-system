@@ -1,6 +1,32 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, CheckCircle, RefreshCcw, Trash2, AlertCircle } from "lucide-react";
-import { captureVideoFrame, createFaceReference, waitForVideoReady } from "../lib/faceVerification";
+import { captureVideoFrame, createFaceReference, normalizeFaceReference, waitForVideoReady } from "../lib/faceVerification";
+
+function getCameraErrorMessage(error) {
+  const name = error?.name || "";
+
+  if (!window.isSecureContext) {
+    return "Camera access requires a secure page. Open the app on localhost or HTTPS.";
+  }
+
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return "Camera permission was blocked. Allow camera access in your browser and try again.";
+  }
+
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "No camera was found on this device.";
+  }
+
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "The camera is busy or unavailable. Close other apps using it and try again.";
+  }
+
+  if (name === "SecurityError") {
+    return "Camera access requires a secure page. Open the app on localhost or HTTPS.";
+  }
+
+  return error?.message || "Unable to access the camera";
+}
 
 export default function FaceCaptureField({
   label = "Face Enrollment",
@@ -15,7 +41,7 @@ export default function FaceCaptureField({
   const [cameraReady, setCameraReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const hasEnrollment = value?.cleared ? false : Boolean(value?.reference || existingReference);
+  const hasEnrollment = value?.cleared ? false : Boolean(normalizeFaceReference(value?.reference || existingReference));
 
   useEffect(() => {
     return () => {
@@ -62,7 +88,11 @@ export default function FaceCaptureField({
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("This browser does not support camera capture");
+        throw new Error(
+          window.isSecureContext
+            ? "This browser does not support camera capture"
+            : "Camera access requires a secure page. Open the app on localhost or HTTPS."
+        );
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -76,7 +106,7 @@ export default function FaceCaptureField({
     } catch (err) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
-      setError(err.message || "Unable to access the camera");
+      setError(getCameraErrorMessage(err));
     } finally {
       setBusy(false);
     }
