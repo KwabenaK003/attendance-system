@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
-import { ChevronLeft, ChevronRight, Download, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Clock, Globe, MapPin, MonitorSmartphone, Wifi } from "lucide-react";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { hasManagementAccess } from "../lib/workforce";
 import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
@@ -11,6 +11,63 @@ function formatDuration(minutes) {
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
+}
+
+function hasCapturedDetails(details) {
+  return Boolean(
+    details?.deviceName
+    || details?.ipAddress
+    || details?.networkName
+    || details?.locationName
+    || details?.recordedAt
+  );
+}
+
+function getCapturedDetailValue(details, key) {
+  return details?.[key] || "";
+}
+
+function CapturedDetailsCard({ title, details }) {
+  if (!hasCapturedDetails(details)) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</p>
+      <div className="mt-2 space-y-2 text-xs text-slate-300">
+        {details.deviceName && (
+          <p className="flex items-center gap-2">
+            <MonitorSmartphone className="h-3.5 w-3.5 text-accent" />
+            <span>{details.deviceName}</span>
+          </p>
+        )}
+        {details.ipAddress && (
+          <p className="flex items-center gap-2">
+            <Globe className="h-3.5 w-3.5 text-accent" />
+            <span>IP: {details.ipAddress}</span>
+          </p>
+        )}
+        {details.networkName && (
+          <p className="flex items-center gap-2">
+            <Wifi className="h-3.5 w-3.5 text-accent" />
+            <span>Network: {details.networkName}</span>
+          </p>
+        )}
+        {details.locationName && (
+          <p className="flex items-center gap-2">
+            <MapPin className="h-3.5 w-3.5 text-accent" />
+            <span>Location: {details.locationName}</span>
+          </p>
+        )}
+        {details.recordedAt && (
+          <p className="text-[11px] text-slate-500">
+            Recorded at {format(parseISO(details.recordedAt), "MMM d, yyyy HH:mm:ss")}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function TimesheetsPage() {
@@ -112,8 +169,16 @@ export default function TimesheetsPage() {
       "Clock In",
       "Clock Out",
       "Duration",
-      "Location In",
-      "Location Out",
+      "Clock In Device",
+      "Clock In IP",
+      "Clock In Network",
+      "Clock In Location",
+      "Clock In Recorded At",
+      "Clock Out Device",
+      "Clock Out IP",
+      "Clock Out Network",
+      "Clock Out Location",
+      "Clock Out Recorded At",
       "Note",
     ];
     const rows = sessions.map((s) => [
@@ -122,8 +187,16 @@ export default function TimesheetsPage() {
       format(parseISO(s.clockIn), "HH:mm:ss"),
       s.clockOut ? format(parseISO(s.clockOut), "HH:mm:ss") : "Active",
       formatDuration(s.minutes),
-      s.locationIn || "",
-      s.locationOut || "",
+      getCapturedDetailValue(s.capturedIn, "deviceName"),
+      getCapturedDetailValue(s.capturedIn, "ipAddress"),
+      getCapturedDetailValue(s.capturedIn, "networkName"),
+      getCapturedDetailValue(s.capturedIn, "locationName"),
+      getCapturedDetailValue(s.capturedIn, "recordedAt"),
+      getCapturedDetailValue(s.capturedOut, "deviceName"),
+      getCapturedDetailValue(s.capturedOut, "ipAddress"),
+      getCapturedDetailValue(s.capturedOut, "networkName"),
+      getCapturedDetailValue(s.capturedOut, "locationName"),
+      getCapturedDetailValue(s.capturedOut, "recordedAt"),
       s.note || "",
     ]);
     const csv = [header, ...rows].map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
@@ -192,7 +265,7 @@ export default function TimesheetsPage() {
                 <th className="table-header px-5 py-3 text-left">Clock In</th>
                 <th className="table-header px-5 py-3 text-left">Clock Out</th>
                 <th className="table-header px-5 py-3 text-left">Duration</th>
-                <th className="table-header px-5 py-3 text-left">Location</th>
+                <th className="table-header px-5 py-3 text-left">Captured Details</th>
                 <th className="table-header px-5 py-3 text-left">Note</th>
               </tr>
             </thead>
@@ -223,11 +296,17 @@ export default function TimesheetsPage() {
                         {formatDuration(s.minutes)}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-slate-400 text-xs max-w-[140px] truncate">
-                      {s.locationIn || "—"}
+                    <td className="px-5 py-3 min-w-[280px] align-top">
+                      <div className="space-y-2">
+                        <CapturedDetailsCard title="Clock In" details={s.capturedIn} />
+                        <CapturedDetailsCard title="Clock Out" details={s.capturedOut} />
+                        {!hasCapturedDetails(s.capturedIn) && !hasCapturedDetails(s.capturedOut) && (
+                          <span className="text-slate-500 text-xs">—</span>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-5 py-3 text-slate-400 text-xs max-w-[120px] truncate">
-                      {s.note || "—"}
+                    <td className="px-5 py-3 text-slate-400 text-xs max-w-[220px] align-top">
+                      <p className="break-words">{s.note || "—"}</p>
                     </td>
                   </tr>
                 ))

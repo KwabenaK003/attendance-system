@@ -71,7 +71,7 @@ export function createDetachedSupabaseClient() {
 // create table leave_requests (
 //   id uuid default gen_random_uuid() primary key,
 //   user_id uuid references profiles(id) on delete cascade,
-//   type text check (type in ('sick','vacation','personal','other')),
+//   type text check (type in ('sick','vacation','personal','maternal','study','other')),
 //   start_date date not null,
 //   end_date date not null,
 //   hours numeric(5,2),

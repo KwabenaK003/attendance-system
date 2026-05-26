@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import FaceCaptureField from "../components/FaceCaptureField";
@@ -335,16 +336,18 @@ const ROLE_BADGE = { admin: "badge-red", manager: "badge-yellow", employee: "bad
 
 export default function MembersPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { memberId } = useParams();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [editMember, setEditMember] = useState(null);
   const [showCSV, setShowCSV] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [saveError, setSaveError] = useState("");
   const [activeMenuId, setActiveMenuId] = useState(null);
   const activeMenuRef = useRef(null);
+  const editingViaRoute = Boolean(memberId);
 
   useEffect(() => { fetchMembers(); }, []);
 
@@ -368,7 +371,7 @@ export default function MembersPage() {
     setLoading(false);
   }
 
-  async function saveMember(form) {
+  async function saveMember(form, { closeInlineForm = true } = {}) {
     setSaveError("");
     const faceReference = form.faceEnrollment?.cleared
       ? null
@@ -416,11 +419,20 @@ export default function MembersPage() {
     }
 
     if (error) { setSaveError(error.message); return { error }; }
-    setShowForm(false);
-    setEditMember(null);
+    if (closeInlineForm) {
+      setShowForm(false);
+    }
     setActiveMenuId(null);
-    fetchMembers();
+    await fetchMembers();
     return {};
+  }
+
+  async function saveEditedMember(form) {
+    const result = await saveMember(form, { closeInlineForm: false });
+    if (!result.error) {
+      navigate("/members");
+    }
+    return result;
   }
 
   async function deleteMember(id) {
@@ -449,6 +461,48 @@ export default function MembersPage() {
     .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" }));
 
   const initials = (name) => name?.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "?";
+  const selectedMember = editingViaRoute
+    ? members.find((member) => String(member.id) === memberId) || null
+    : null;
+
+  if (editingViaRoute) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
+          <div>
+            <h2 className="font-display font-bold text-2xl text-white">Edit Member</h2>
+            <p className="text-slate-400 text-sm mt-1">
+              Update member details without jumping back to the top of the members list.
+            </p>
+          </div>
+          <button onClick={() => navigate("/members")} className="btn-secondary text-sm">
+            Back to Members
+          </button>
+        </div>
+
+        {saveError && (
+          <div className="flex items-center gap-2 text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-3">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />{saveError}
+            <button onClick={() => setSaveError("")} className="ml-auto"><X className="w-4 h-4" /></button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="card p-8 text-center text-slate-500">Loading…</div>
+        ) : selectedMember ? (
+          <MemberForm
+            initial={selectedMember}
+            onSave={saveEditedMember}
+            onCancel={() => navigate("/members")}
+          />
+        ) : (
+          <div className="card p-8 text-center text-slate-500">
+            Member not found.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -461,7 +515,7 @@ export default function MembersPage() {
           <button onClick={() => setShowCSV(true)} className="btn-secondary flex items-center gap-2 text-sm">
             <Upload className="w-4 h-4" />Bulk Import CSV
           </button>
-          <button onClick={() => { setShowForm(true); setEditMember(null); }} className="btn-primary text-sm">
+          <button onClick={() => { setShowForm(true); setActiveMenuId(null); }} className="btn-primary text-sm">
             <Plus className="w-4 h-4" />Add Member
           </button>
         </div>
@@ -490,11 +544,11 @@ export default function MembersPage() {
       </div>
 
       {/* Form */}
-      {(showForm || editMember) && (
+      {showForm && (
         <MemberForm
-          initial={editMember}
+          initial={null}
           onSave={saveMember}
-          onCancel={() => { setShowForm(false); setEditMember(null); }}
+          onCancel={() => { setShowForm(false); }}
         />
       )}
 
@@ -565,9 +619,8 @@ export default function MembersPage() {
                             <button
                               onClick={() => {
                                 setActiveMenuId(null);
-                                setEditMember(m);
                                 setShowForm(false);
-                                window.scrollTo({ top: 0, behavior: "smooth" });
+                                navigate(`/members/${m.id}/edit`);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-200 hover:bg-slate-800 transition-colors"
                             >

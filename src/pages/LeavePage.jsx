@@ -5,12 +5,46 @@ import { format, differenceInCalendarDays } from "date-fns";
 import { Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical } from "lucide-react";
 import { hasManagementAccess } from "../lib/workforce";
 
-const LEAVE_TYPES = ["sick", "vacation", "personal", "other"];
+const LEAVE_TYPES = ["sick", "vacation", "personal", "maternal", "study", "other"];
 const STATUS_BADGE = {
   pending: "badge-yellow",
   approved: "badge-green",
   rejected: "badge-red",
 };
+const OTHER_LEAVE_TYPE_MARKER = "__OTHER_LEAVE_TYPE__:";
+
+function splitLeaveReason(reason = "") {
+  const value = reason || "";
+  if (!value.startsWith(OTHER_LEAVE_TYPE_MARKER)) {
+    return { otherType: "", reason: value };
+  }
+
+  const firstLineBreak = value.indexOf("\n");
+  if (firstLineBreak === -1) {
+    return {
+      otherType: value.slice(OTHER_LEAVE_TYPE_MARKER.length).trim(),
+      reason: "",
+    };
+  }
+
+  return {
+    otherType: value.slice(OTHER_LEAVE_TYPE_MARKER.length, firstLineBreak).trim(),
+    reason: value.slice(firstLineBreak).trim(),
+  };
+}
+
+function buildLeaveReason(type, otherType, reason) {
+  const trimmedReason = reason.trim();
+  if (type !== "other") {
+    return trimmedReason;
+  }
+
+  const trimmedOtherType = otherType.trim();
+  return [
+    trimmedOtherType ? `${OTHER_LEAVE_TYPE_MARKER}${trimmedOtherType}` : "",
+    trimmedReason,
+  ].filter(Boolean).join("\n");
+}
 
 export default function LeavePage() {
   const { profile } = useAuth();
@@ -18,7 +52,7 @@ export default function LeavePage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ type: "vacation", start_date: "", end_date: "", reason: "" });
+  const [form, setForm] = useState({ type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
@@ -71,7 +105,7 @@ export default function LeavePage() {
   }
 
   function resetForm() {
-    setForm({ type: "vacation", start_date: "", end_date: "", reason: "" });
+    setForm({ type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
     setEditingRequestId(null);
     setShowForm(false);
     setError("");
@@ -81,6 +115,7 @@ export default function LeavePage() {
   async function submitRequest() {
     if (!form.start_date || !form.end_date) { setError("Please fill all required fields"); return; }
     if (form.end_date < form.start_date) { setError("End date must be after start date"); return; }
+    if (form.type === "other" && !form.other_type.trim()) { setError("Enter the leave type you are requesting"); return; }
     if (!profile?.id) { setError("Your account profile is still loading. Please try again."); return; }
 
     setSubmitting(true);
@@ -93,7 +128,7 @@ export default function LeavePage() {
         start_date: form.start_date,
         end_date: form.end_date,
         hours: days * 8,
-        reason: form.reason,
+        reason: buildLeaveReason(form.type, form.other_type, form.reason),
       };
 
       const { error: submitError } = editingRequestId
@@ -128,12 +163,14 @@ export default function LeavePage() {
   }
 
   function startEditing(request) {
+    const { otherType, reason } = splitLeaveReason(request.reason);
     setEditingRequestId(request.id);
     setForm({
       type: request.type || "vacation",
+      other_type: otherType,
       start_date: request.start_date || "",
       end_date: request.end_date || "",
-      reason: request.reason || "",
+      reason,
     });
     setError("");
     setShowForm(true);
@@ -199,7 +236,19 @@ export default function LeavePage() {
                 {LEAVE_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
               </select>
             </div>
-            <div />
+            <div>
+              {form.type === "other" && (
+                <>
+                  <label className="label">Other Leave Type</label>
+                  <input
+                    className="input"
+                    placeholder="Enter leave type"
+                    value={form.other_type}
+                    onChange={set("other_type")}
+                  />
+                </>
+              )}
+            </div>
             <div>
               <label className="label">Start Date</label>
               <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
@@ -239,12 +288,16 @@ export default function LeavePage() {
         ) : (
           requests.map((req) => {
             const days = differenceInCalendarDays(new Date(req.end_date), new Date(req.start_date)) + 1;
+            const { otherType, reason } = splitLeaveReason(req.reason);
             const isOwnRequest = req.user_id === profile?.id;
             const canChangeStatus = isOwnRequest || isAdmin;
             const canEdit = isOwnRequest || isAdmin;
             const canDelete = isOwnRequest || isAdmin;
             const isApproved = req.status === "approved";
             const isRejected = req.status === "rejected";
+            const leaveLabel = req.type === "other" && otherType
+              ? otherType
+              : `${req.type} Leave`;
             return (
               <div key={req.id} className="card p-5 flex items-start gap-4 flex-wrap">
                 <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
@@ -252,7 +305,7 @@ export default function LeavePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-white font-medium capitalize">{req.type} Leave</span>
+                    <span className="text-white font-medium capitalize">{leaveLabel}</span>
                     <span className={`badge ${STATUS_BADGE[req.status] || "badge-blue"}`}>{req.status}</span>
                     {isAdmin && req.profiles?.full_name && (
                       <span className="text-slate-500 text-xs">— {req.profiles.full_name}</span>
@@ -262,7 +315,7 @@ export default function LeavePage() {
                     {format(new Date(req.start_date), "MMM d")} – {format(new Date(req.end_date), "MMM d, yyyy")}
                     <span className="text-slate-500 ml-2">({days} day{days > 1 ? "s" : ""})</span>
                   </p>
-                  {req.reason && <p className="text-slate-500 text-xs mt-1">{req.reason}</p>}
+                  {reason && <p className="text-slate-500 text-xs mt-1">{reason}</p>}
                 </div>
                 <div className="flex gap-2 flex-wrap flex-shrink-0 items-start">
                   {canChangeStatus && (

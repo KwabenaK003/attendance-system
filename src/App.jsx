@@ -54,6 +54,7 @@ function AppRoutes() {
       <Route path="/timesheets" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
       <Route path="/leave" element={<RequireAuth><LeavePage /></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
+      <Route path="/members/:memberId/edit" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/users" element={<Navigate to="/members" replace />} />
       <Route path="/employees" element={<Navigate to="/members" replace />} />

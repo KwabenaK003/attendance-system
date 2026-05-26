@@ -12,10 +12,6 @@ import {
   ScanFace,
   Search,
   UserRound,
-  Wifi,
-  MapPin,
-  Globe,
-  MonitorSmartphone,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
@@ -230,7 +226,6 @@ export default function ClockPage({ standalone = false }) {
   const [cameraReady, setCameraReady] = useState(false);
   const [faceBusy, setFaceBusy] = useState(false);
   const [facePreview, setFacePreview] = useState(null);
-  const [lastCapturedDetails, setLastCapturedDetails] = useState(null);
   const [stationLinkCopied, setStationLinkCopied] = useState(false);
 
   const people = sortPeople([...staffEmployees, ...members]);
@@ -438,7 +433,6 @@ export default function ClockPage({ standalone = false }) {
     setSelectedPersonKey(buildPersonKey(person));
     setSearchTerm(person.full_name || "");
     setFacePreview(null);
-    setLastCapturedDetails(null);
     setMessage(null);
     stopFaceCamera();
   }
@@ -555,14 +549,6 @@ export default function ClockPage({ standalone = false }) {
         });
       }
 
-      setLastCapturedDetails({
-        deviceName: device.deviceName,
-        ipAddress: ipAddress || "Unavailable",
-        networkName: network.networkName,
-        locationName: location?.location_name || "Unavailable",
-        timestamp: new Date().toISOString(),
-      });
-
       setFacePreview(null);
       await fetchStatus(person);
 
@@ -654,10 +640,7 @@ export default function ClockPage({ standalone = false }) {
         <div className="card p-5 animate-fade-up border-accent/20">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <h3 className="font-display font-semibold text-white">Shared Tablet Clock Link</h3>
-              <p className="text-slate-400 text-sm mt-1">
-                Open this link on the tablet to use a dedicated shared clock screen. Punches from that device save into the same Supabase records used by the dashboard, timesheets, and reports.
-              </p>
+              <h3 className="font-display font-semibold text-white">Shared Clock Link</h3>
             </div>
             <Link to="/clock/station" className="btn-secondary text-sm">
               Preview Tablet View
@@ -671,7 +654,7 @@ export default function ClockPage({ standalone = false }) {
             </button>
           </div>
           <div className="mt-3 space-y-1 text-xs text-slate-500">
-            <p>Sign in on the tablet with an admin, executive, or manager account once, then leave this shared clock page open for staff use.</p>
+            <p>Sign in on the device with an admin, executive, or manager account once, then leave this shared clock page open for staff use.</p>
             {stationUsesLocalhost && (
               <p>If you are still using `localhost`, replace it with your deployed site URL or your computer&apos;s local network IP before opening the link on another device.</p>
             )}
@@ -854,19 +837,6 @@ export default function ClockPage({ standalone = false }) {
                 </button>
               )}
             </div>
-
-            {lastCapturedDetails && (
-              <div className="card p-4 text-left max-w-xl mx-auto bg-slate-900/60 border-slate-700">
-                <h3 className="font-display font-semibold text-white mb-3">Latest Captured Details</h3>
-                <div className="space-y-2 text-sm text-slate-300">
-                  <p className="flex items-center gap-2"><MonitorSmartphone className="w-4 h-4 text-accent" /> {lastCapturedDetails.deviceName}</p>
-                  <p className="flex items-center gap-2"><Globe className="w-4 h-4 text-accent" /> IP: {lastCapturedDetails.ipAddress}</p>
-                  <p className="flex items-center gap-2"><Wifi className="w-4 h-4 text-accent" /> Network: {lastCapturedDetails.networkName}</p>
-                  <p className="flex items-center gap-2"><MapPin className="w-4 h-4 text-accent" /> Location: {lastCapturedDetails.locationName}</p>
-                  <p className="text-slate-500 text-xs mt-3">Recorded at {format(parseISO(lastCapturedDetails.timestamp), "MMM d, yyyy HH:mm:ss")}</p>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 max-w-xl mx-auto px-6 py-8 text-slate-500">

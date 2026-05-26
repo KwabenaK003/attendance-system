@@ -15,6 +15,46 @@ function sortByTimestampAscending(left, right) {
   return leftTime - rightTime;
 }
 
+function extractNoteValue(note, label) {
+  if (typeof note !== "string" || !note.trim()) {
+    return null;
+  }
+
+  const normalizedLabel = `${label.toLowerCase()}:`;
+  const segment = note
+    .split("|")
+    .map((part) => part.trim())
+    .find((part) => part.toLowerCase().startsWith(normalizedLabel));
+
+  if (!segment) {
+    return null;
+  }
+
+  const value = segment.slice(segment.indexOf(":") + 1).trim();
+  return value || null;
+}
+
+function buildCaptureDetails(record, {
+  timestamp,
+  locationName,
+  preferNoteLocation = true,
+  includeNoteFields = true,
+} = {}) {
+  const note = record?.note || "";
+  const noteLocation = extractNoteValue(note, "Location");
+
+  return {
+    deviceName: record?.device_name || (includeNoteFields ? extractNoteValue(note, "Device") : null),
+    ipAddress: record?.ip_address || (includeNoteFields ? extractNoteValue(note, "IP") : null),
+    networkName: record?.network_name || (includeNoteFields ? extractNoteValue(note, "Network") : null),
+    locationName: preferNoteLocation
+      ? noteLocation || locationName || record?.location_name || null
+      : locationName || record?.location_name || noteLocation || null,
+    verificationMethod: record?.verification_method || (includeNoteFields ? extractNoteValue(note, "Method") : null),
+    recordedAt: timestamp || record?.timestamp || record?.punch_out || record?.punch_in || null,
+  };
+}
+
 export function buildPunchSessions(punches = [], { now = new Date(), getPersonName } = {}) {
   const sessions = [];
   const openPunches = new Map();
@@ -54,6 +94,14 @@ export function buildPunchSessions(punches = [], { now = new Date(), getPersonNa
       minutes: Math.max(0, differenceInMinutes(timestamp, punchInTime)),
       locationIn: lastIn.location_name || null,
       locationOut: punch.location_name || null,
+      capturedIn: buildCaptureDetails(lastIn, {
+        timestamp: lastIn.timestamp,
+        locationName: lastIn.location_name || null,
+      }),
+      capturedOut: buildCaptureDetails(punch, {
+        timestamp: punch.timestamp,
+        locationName: punch.location_name || null,
+      }),
       note: lastIn.note || punch.note || null,
       active: false,
     });
@@ -78,6 +126,11 @@ export function buildPunchSessions(punches = [], { now = new Date(), getPersonNa
       minutes: Math.max(0, differenceInMinutes(now, punchInTime)),
       locationIn: punch.location_name || null,
       locationOut: null,
+      capturedIn: buildCaptureDetails(punch, {
+        timestamp: punch.timestamp,
+        locationName: punch.location_name || null,
+      }),
+      capturedOut: null,
       note: punch.note || null,
       active: true,
     });
@@ -107,6 +160,18 @@ export function buildMemberSessions(entries = [], { now = new Date() } = {}) {
         minutes: Math.max(0, differenceInMinutes(punchOutTime || now, punchInTime)),
         locationIn: entry.location_name || null,
         locationOut: entry.location_name || null,
+        capturedIn: buildCaptureDetails(entry, {
+          timestamp: entry.punch_in,
+          locationName: entry.location_name || null,
+          preferNoteLocation: false,
+          includeNoteFields: !punchOutTime,
+        }),
+        capturedOut: punchOutTime
+          ? buildCaptureDetails(entry, {
+            timestamp: entry.punch_out,
+            locationName: entry.location_name || null,
+          })
+          : null,
         note: entry.note || null,
         active: !punchOutTime,
       };
