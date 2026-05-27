@@ -9,6 +9,7 @@ import LeavePage from "./pages/LeavePage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import MembersPage from "./pages/MembersPage";
+import VisitorsPage from "./pages/VisitorsPage";
 import { getSafeRedirectPath, withRedirect } from "./lib/authRedirect";
 import { hasManagementAccess } from "./lib/workforce";
 
@@ -56,6 +57,7 @@ function AppRoutes() {
       <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
       <Route path="/members/:memberId/edit" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
+      <Route path="/visitors" element={<RequireAuth><VisitorsPage /></RequireAuth>} />
       <Route path="/users" element={<Navigate to="/members" replace />} />
       <Route path="/employees" element={<Navigate to="/members" replace />} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />

@@ -180,19 +180,12 @@ export default function DashboardPage() {
     );
   }
 
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div className="animate-fade-up">
         <h2 className="font-display font-bold text-2xl text-white">
-          {greeting()}, {firstName} 👋
+          Welcome, {firstName}
         </h2>
         <p className="text-slate-400 text-sm mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
       </div>

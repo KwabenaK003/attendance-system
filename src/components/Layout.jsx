@@ -9,7 +9,7 @@ import { buildMemberActivity, sortTimeActivity } from "../lib/timeRecords";
 import {
   Clock, LayoutDashboard, Users, FileText,
   Calendar, BarChart2, Settings, LogOut, Menu, X, ChevronRight,
-  Bell, Zap, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList
+  Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList
 } from "lucide-react";
 
 const navItems = [
@@ -18,8 +18,9 @@ const navItems = [
   { to: "/timesheets", icon: FileText, label: "Timesheets" },
   { to: "/leave", icon: Calendar, label: "Leave Requests" },
   { to: "/reports", icon: BarChart2, label: "Reports" },
-  { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/members", icon: Users, label: "Members" },
+  { to: "/visitors", icon: UserRound, label: "Visitors" },
+  { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
 function NotificationRow({ icon: Icon, title, body, tone = "default" }) {
@@ -49,6 +50,7 @@ export default function Layout({ children }) {
   const { profile, signOut, displayName } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationPanelStyle, setNotificationPanelStyle] = useState({ top: 56, right: 16, width: 352 });
   const [notificationState, setNotificationState] = useState({
@@ -355,49 +357,59 @@ export default function Layout({ children }) {
   const unreadCount = notifications.length;
   const visibleNavItems = navItems;
 
-  const SidebarContent = () => (
+  const handleDesktopSidebarBlur = (event) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setDesktopSidebarExpanded(false);
+    }
+  };
+
+  const SidebarContent = ({ compact = false }) => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-4 py-6 border-b border-slate-800">
-        <div className="flex items-center gap-3">
+      <div className={`border-b border-slate-800 py-6 ${compact ? "px-3" : "px-4"}`}>
+        <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
           <div className="w-9 h-9 rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-center clock-ring">
-            <Zap className="w-4 h-4 text-accent" />
+            <Building2 className="w-4 h-4 text-accent" />
           </div>
-          <div>
-            <h1 className="font-display font-bold text-white text-lg leading-none">ChronoTrack</h1>
-            <p className="text-slate-500 text-xs mt-0.5">Smart Time Clock</p>
+          <div className={compact ? "hidden" : "min-w-0"}>
+            <h1 className="font-display font-bold text-white text-lg leading-none">Attendance Management</h1>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="text-slate-600 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>
+      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
+        {!compact && <p className="text-slate-600 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
         {visibleNavItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
-            className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}
+            title={compact ? label : undefined}
+            className={({ isActive }) => `nav-link group ${compact ? "compact" : ""} ${isActive ? "active" : ""}`}
             onClick={() => setSidebarOpen(false)}
           >
             <Icon className="w-4 h-4 flex-shrink-0" />
-            <span>{label}</span>
-            <ChevronRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100" />
+            {!compact && <span>{label}</span>}
+            {!compact && <ChevronRight className="w-3 h-3 ml-auto opacity-0 transition-opacity group-hover:opacity-100" />}
           </NavLink>
         ))}
       </nav>
 
       {/* User */}
-      <div className="p-3 border-t border-slate-800">
-        <div className="flex items-center gap-3 px-3 py-2 rounded-xl">
+      <div className={`border-t border-slate-800 ${compact ? "p-2" : "p-3"}`}>
+        <div className={`rounded-xl ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent/30 to-accent/10 border border-accent/20 flex items-center justify-center text-accent text-xs font-bold font-display flex-shrink-0">
             {initials}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className={compact ? "hidden" : "flex-1 min-w-0"}>
             <p className="text-white text-sm font-medium truncate">{displayName}</p>
             <p className="text-slate-500 text-xs">{getRoleLabel(profile?.role)}</p>
           </div>
-          <button onClick={handleSignOut} className="text-slate-500 hover:text-danger transition-colors" title="Sign out">
+          <button
+            onClick={handleSignOut}
+            className={`text-slate-500 hover:text-danger transition-colors ${compact ? "" : "ml-auto"}`}
+            title="Sign out"
+          >
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -408,8 +420,16 @@ export default function Layout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 border-r border-slate-800 bg-slate-950/90 flex-shrink-0">
-        <SidebarContent />
+      <aside
+        className={`hidden lg:flex flex-col border-r border-slate-800 bg-slate-950/90 flex-shrink-0 transition-[width] duration-300 ease-out ${
+          desktopSidebarExpanded ? "w-60" : "w-20"
+        }`}
+        onMouseEnter={() => setDesktopSidebarExpanded(true)}
+        onMouseLeave={() => setDesktopSidebarExpanded(false)}
+        onFocusCapture={() => setDesktopSidebarExpanded(true)}
+        onBlurCapture={handleDesktopSidebarBlur}
+      >
+        <SidebarContent compact={!desktopSidebarExpanded} />
       </aside>
 
       {/* Mobile sidebar overlay */}
