@@ -1,14 +1,41 @@
 import { useEffect, useState } from "react";
+import {
+  addMinutes,
+  endOfWeek,
+  format,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
+import {
+  Calendar,
+  Clock,
+  TrendingUp,
+  UserCheck,
+  UserRound,
+  Users,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { format, startOfWeek, endOfWeek, differenceInMinutes, parseISO, startOfMonth, subMonths } from "date-fns";
-import { Clock, TrendingUp, Calendar, Activity } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import AttendanceChartsSection from "../components/AttendanceChartsSection";
-import { buildAttendanceSeries } from "../lib/attendanceAnalytics";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
+import { loadSystemSettings } from "../lib/systemSettings";
 import { buildMemberActivity, buildPunchActivity, buildPunchSessions, sortTimeActivity } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
+
+const PIE_COLORS = ["#28c7d9", "#fbbf24", "#ff4d6d"];
 
 function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
   const colors = {
@@ -17,41 +44,139 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
     yellow: "text-warn bg-warn/10 border-warn/20",
     blue: "text-info bg-info/10 border-info/20",
   };
+
   return (
     <div className="stat-card animate-fade-up">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-slate-400 text-sm">{label}</p>
-          <p className="font-display font-bold text-2xl text-white mt-0.5">{value}</p>
-          {sub && <p className="text-slate-500 text-xs mt-1">{sub}</p>}
+          <p className="text-sm text-slate-400">{label}</p>
+          <p className="mt-0.5 font-display text-2xl font-bold text-white">{value}</p>
+          {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
         </div>
-        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${colors[color]}`}>
-          <Icon className="w-5 h-5" />
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${colors[color]}`}>
+          <Icon className="h-5 w-5" />
         </div>
       </div>
     </div>
   );
 }
 
-const CustomTooltip = ({ active, payload, label }) => {
-  if (active && payload?.length) {
-    return (
-      <div className="card px-3 py-2 text-sm">
-        <p className="text-slate-400">{label}</p>
-        <p className="text-accent font-semibold">{payload[0].value}h</p>
-      </div>
-    );
+function HoursTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) {
+    return null;
   }
-  return null;
-};
+
+  return (
+    <div className="card px-3 py-2 text-sm">
+      <p className="text-slate-400">{label}</p>
+      <p className="font-semibold text-accent">{payload[0].value}h</p>
+    </div>
+  );
+}
+
+function StatusTooltip({ active, payload }) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const entry = payload[0];
+
+  return (
+    <div className="card px-3 py-2 text-sm">
+      <p className="text-slate-400">{entry.name}</p>
+      <p className="font-semibold" style={{ color: entry.payload.fill || entry.color }}>
+        {entry.value}
+      </p>
+    </div>
+  );
+}
+
+function formatClockTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  try {
+    return format(parseISO(value), "HH:mm");
+  } catch {
+    return "-";
+  }
+}
+
+function parseTimeToDate(referenceDate, value) {
+  if (!value || typeof value !== "string" || !value.includes(":")) {
+    return referenceDate;
+  }
+
+  const [hours, minutes] = value.split(":").map(Number);
+  const date = new Date(referenceDate);
+  date.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+  return date;
+}
+
+function isMissingVisitorsTable(error) {
+  const message = error?.message || "";
+  return /visitors/i.test(message) && /(does not exist|not found|relation)/i.test(message);
+}
+
+function buildStatusBreakdown(members = [], todayMemberEntries = [], attendanceSettings, now = new Date()) {
+  const checkInStart = parseTimeToDate(now, attendanceSettings?.officialCheckInTime || "09:00");
+  const lateCutoff = addMinutes(checkInStart, Number(attendanceSettings?.lateThresholdMinutes || 0));
+  const firstEntryByMember = new Map();
+
+  for (const entry of todayMemberEntries) {
+    if (!entry?.member_id || !entry?.punch_in) {
+      continue;
+    }
+
+    const existing = firstEntryByMember.get(entry.member_id);
+    if (!existing || parseISO(entry.punch_in) < parseISO(existing.punch_in)) {
+      firstEntryByMember.set(entry.member_id, entry);
+    }
+  }
+
+  let late = 0;
+  let onTime = 0;
+
+  for (const entry of firstEntryByMember.values()) {
+    const punchIn = parseISO(entry.punch_in);
+    if (punchIn > lateCutoff) {
+      late += 1;
+    } else {
+      onTime += 1;
+    }
+  }
+
+  const presentToday = firstEntryByMember.size;
+  const absent = Math.max(members.length - presentToday, 0);
+
+  return {
+    presentToday,
+    late,
+    pieData: [
+      { name: "On Time", value: onTime, fill: PIE_COLORS[0] },
+      { name: "Late", value: late, fill: PIE_COLORS[1] },
+      { name: "Absent", value: absent, fill: PIE_COLORS[2] },
+    ].filter((slice) => slice.value > 0),
+  };
+}
 
 export default function DashboardPage() {
   const { profile, firstName } = useAuth();
   const [weeklyData, setWeeklyData] = useState([]);
-  const [stats, setStats] = useState({ todayHours: 0, weekHours: 0, monthHours: 0, isClockedIn: false });
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [attendanceOverview, setAttendanceOverview] = useState({ dailyData: [], monthlyData: [] });
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [stats, setStats] = useState({
+    todayHours: "0.0",
+    weekHours: "0.0",
+    totalMembers: 0,
+    presentToday: 0,
+    lateCount: 0,
+    visitorsCount: 0,
+    isClockedIn: false,
+  });
+  const [recentClockRows, setRecentClockRows] = useState([]);
+  const [statusBreakdown, setStatusBreakdown] = useState([]);
+  const [dashboardError, setDashboardError] = useState("");
+  const [loading, setLoading] = useState(true);
   const isAdmin = hasManagementAccess(profile?.role);
 
   useEffect(() => {
@@ -80,27 +205,32 @@ export default function DashboardPage() {
   async function fetchData() {
     if (!profile?.id) {
       setWeeklyData([]);
-      setRecentActivity([]);
-      setStats({ todayHours: 0, weekHours: 0, monthHours: 0, isClockedIn: false });
-      setAttendanceOverview({ dailyData: [], monthlyData: [] });
-      setAttendanceLoading(false);
+      setRecentClockRows([]);
+      setStatusBreakdown([]);
+      setLoading(false);
       return;
     }
 
+    setLoading(true);
+    setDashboardError("");
+
     const now = new Date();
+    const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
     const monthStart = startOfMonth(now);
-    const attendanceRangeStart = startOfMonth(subMonths(now, 5));
-    setAttendanceLoading(isAdmin);
 
     const [
-      { data, error },
-      { data: workforceProfiles, error: workforceProfilesError },
-      { data: workforcePunches, error: workforcePunchesError },
-      { data: members, error: membersError },
-      { data: memberEntries, error: memberEntriesError },
+      settingsResult,
+      personalPunchesResult,
+      profilesResult,
+      membersResult,
+      todayMemberEntriesResult,
+      recentMemberEntriesResult,
+      recentPunchesResult,
+      visitorsResult,
     ] = await Promise.all([
+      loadSystemSettings(),
       supabase
         .from("punches")
         .select("*")
@@ -108,169 +238,294 @@ export default function DashboardPage() {
         .gte("timestamp", monthStart.toISOString())
         .order("timestamp", { ascending: true }),
       isAdmin
-        ? supabase.from("profiles").select("id")
+        ? supabase.from("profiles").select("id, full_name").order("full_name", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       isAdmin
-        ? supabase
-          .from("punches")
-          .select("user_id, timestamp")
-          .gte("timestamp", attendanceRangeStart.toISOString())
-        : Promise.resolve({ data: [], error: null }),
-      isAdmin
-        ? supabase.from("members").select("id")
+        ? supabase.from("members").select("id, full_name").order("full_name", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       isAdmin
         ? supabase
           .from("member_entries")
           .select("id, member_id, punch_in, punch_out, location_name, note, members(full_name)")
-          .gte("punch_in", attendanceRangeStart.toISOString())
+          .gte("punch_in", todayStart.toISOString())
+          .order("punch_in", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("member_entries")
+          .select("id, member_id, punch_in, punch_out, location_name, note, members(full_name)")
           .order("punch_in", { ascending: false })
+          .limit(12)
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("punches")
+          .select("id, user_id, type, timestamp, location_name")
+          .order("timestamp", { ascending: false })
+          .limit(12)
+        : supabase
+          .from("punches")
+          .select("id, user_id, type, timestamp, location_name")
+          .eq("user_id", profile.id)
+          .order("timestamp", { ascending: false })
+          .limit(12),
+      isAdmin
+        ? supabase
+          .from("visitors")
+          .select("id, visit_date")
+          .eq("visit_date", format(todayStart, "yyyy-MM-dd"))
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (isAdmin && !workforceProfilesError && !workforcePunchesError && !membersError && !memberEntriesError) {
-      setAttendanceOverview(buildAttendanceSeries({
-        profiles: workforceProfiles || [],
-        members: members || [],
-        punches: workforcePunches || [],
-        memberEntries: memberEntries || [],
-        now,
-      }));
-    } else {
-      setAttendanceOverview({ dailyData: [], monthlyData: [] });
+    const personalPunches = personalPunchesResult.data || [];
+    if (personalPunchesResult.error) {
+      setDashboardError(personalPunchesResult.error.message || "Unable to load your dashboard.");
     }
 
-    setAttendanceLoading(false);
+    const attendanceSettings = settingsResult?.settings?.attendance || {};
 
-    if (error || !data) return;
+    const personalSessions = buildPunchSessions(personalPunches).filter((session) => !session.active);
+    const todayKey = format(now, "yyyy-MM-dd");
+    const todayHours = personalSessions
+      .filter((session) => format(parseISO(session.clockIn), "yyyy-MM-dd") === todayKey)
+      .reduce((total, session) => total + (session.minutes / 60), 0);
+    const weekHours = personalSessions
+      .filter((session) => {
+        const clockIn = parseISO(session.clockIn);
+        return clockIn >= weekStart && clockIn <= weekEnd;
+      })
+      .reduce((total, session) => total + (session.minutes / 60), 0);
+    const isClockedIn = personalPunches.length > 0 && personalPunches[personalPunches.length - 1].type === "in";
 
-    const pairs = buildPunchSessions(data).filter((session) => !session.active).map((session) => ({
-      in: { timestamp: session.clockIn },
-      out: { timestamp: session.clockOut },
-      hours: session.minutes / 60,
-    }));
-
-    const today = format(now, "yyyy-MM-dd");
-    const todayHours = pairs.filter(p => format(parseISO(p.in.timestamp), "yyyy-MM-dd") === today).reduce((s, p) => s + p.hours, 0);
-    const weekHours = pairs.filter(p => {
-      const d = parseISO(p.in.timestamp);
-      return d >= weekStart && d <= weekEnd;
-    }).reduce((s, p) => s + p.hours, 0);
-    const monthHours = pairs.reduce((s, p) => s + p.hours, 0);
-    const isClockedIn = data.length > 0 && data[data.length - 1].type === "in";
-
-    setStats({ todayHours: todayHours.toFixed(1), weekHours: weekHours.toFixed(1), monthHours: monthHours.toFixed(1), isClockedIn });
-
-    // Weekly chart data
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const chart = days.map((day, i) => {
+    const chartDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const chart = chartDays.map((day, index) => {
       const dayDate = new Date(weekStart);
-      dayDate.setDate(weekStart.getDate() + i);
-      const dayStr = format(dayDate, "yyyy-MM-dd");
-      const hrs = pairs.filter(p => format(parseISO(p.in.timestamp), "yyyy-MM-dd") === dayStr).reduce((s, p) => s + p.hours, 0);
-      return { day, hours: parseFloat(hrs.toFixed(1)) };
+      dayDate.setDate(weekStart.getDate() + index);
+      const dayKey = format(dayDate, "yyyy-MM-dd");
+      const hours = personalSessions
+        .filter((session) => format(parseISO(session.clockIn), "yyyy-MM-dd") === dayKey)
+        .reduce((total, session) => total + (session.minutes / 60), 0);
+
+      return { day, hours: Number(hours.toFixed(1)) };
     });
     setWeeklyData(chart);
 
-    setRecentActivity(
-      sortTimeActivity([
-        ...buildPunchActivity(data),
-        ...buildMemberActivity(memberEntries || []),
-      ]).slice(0, 8)
-    );
+    if (isAdmin) {
+      const members = membersResult.data || [];
+      const todayMemberEntries = todayMemberEntriesResult.data || [];
+      const recentMemberEntries = recentMemberEntriesResult.data || [];
+      const recentPunches = recentPunchesResult.data || [];
+      const profileNameById = new Map((profilesResult.data || []).map((entry) => [entry.id, entry.full_name]));
+      const statusSummary = buildStatusBreakdown(members, todayMemberEntries, attendanceSettings, now);
+
+      if (profilesResult.error) {
+        setDashboardError(profilesResult.error.message || "Unable to load dashboard profiles.");
+      } else if (membersResult.error) {
+        setDashboardError(membersResult.error.message || "Unable to load members.");
+      } else if (todayMemberEntriesResult.error) {
+        setDashboardError(todayMemberEntriesResult.error.message || "Unable to load today's attendance.");
+      } else if (recentMemberEntriesResult.error) {
+        setDashboardError(recentMemberEntriesResult.error.message || "Unable to load recent member activity.");
+      } else if (recentPunchesResult.error) {
+        setDashboardError(recentPunchesResult.error.message || "Unable to load recent employee punches.");
+      } else if (visitorsResult.error && !isMissingVisitorsTable(visitorsResult.error)) {
+        setDashboardError(visitorsResult.error.message || "Unable to load visitors.");
+      }
+
+      const visitorsCount = isMissingVisitorsTable(visitorsResult.error)
+        ? 0
+        : (visitorsResult.data || []).length;
+
+      setStatusBreakdown(statusSummary.pieData);
+      setRecentClockRows(
+        sortTimeActivity([
+          ...buildPunchActivity(recentPunches, {
+            getPersonName: (personId) => profileNameById.get(personId) || "Employee",
+          }),
+          ...buildMemberActivity(recentMemberEntries),
+        ]).slice(0, 10)
+      );
+      setStats({
+        todayHours: todayHours.toFixed(1),
+        weekHours: weekHours.toFixed(1),
+        totalMembers: members.length,
+        presentToday: statusSummary.presentToday,
+        lateCount: statusSummary.late,
+        visitorsCount,
+        isClockedIn,
+      });
+    } else {
+      if (recentPunchesResult.error) {
+        setDashboardError(recentPunchesResult.error.message || "Unable to load recent punches.");
+      }
+
+      setStatusBreakdown([]);
+      setRecentClockRows(sortTimeActivity(buildPunchActivity(recentPunchesResult.data || [])).slice(0, 10));
+      setStats({
+        todayHours: todayHours.toFixed(1),
+        weekHours: weekHours.toFixed(1),
+        totalMembers: 0,
+        presentToday: 0,
+        lateCount: 0,
+        visitorsCount: 0,
+        isClockedIn,
+      });
+    }
+
+    setLoading(false);
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="animate-fade-up">
-        <h2 className="font-display font-bold text-2xl text-white">
-          Welcome, {firstName}
-        </h2>
-        <p className="text-slate-400 text-sm mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+        <h2 className="font-display text-2xl font-bold text-white">Welcome, {firstName}</h2>
+        <p className="mt-1 text-sm text-slate-400">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
       </div>
 
-      {/* Clock-in status banner */}
       {stats.isClockedIn && (
-        <div className="card-glow p-4 flex items-center gap-3 animate-fade-up">
-          <div className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse flex-shrink-0" />
-          <p className="text-accent font-medium text-sm">You're currently clocked in</p>
+        <div className="card-glow flex items-center gap-3 p-4 animate-fade-up">
+          <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-accent animate-pulse" />
+          <p className="text-sm font-medium text-accent">You&apos;re currently clocked in</p>
           <div className="ml-auto">
-            <a href="/clock" className="btn-primary text-sm py-1.5 px-4">View Clock</a>
+            <a href="/clock" className="btn-primary px-4 py-1.5 text-sm">View Clock</a>
           </div>
         </div>
       )}
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Clock} label="Today's Hours" value={`${stats.todayHours}h`} sub="Logged today" color="accent" />
-        <StatCard icon={TrendingUp} label="This Week" value={`${stats.weekHours}h`} sub="Mon – Sun" color="blue" />
-        <StatCard icon={Calendar} label="This Month" value={`${stats.monthHours}h`} sub="Total logged" color="yellow" />
-        <StatCard
-          icon={Activity}
-          label="Status"
-          value={stats.isClockedIn ? "Active" : "Idle"}
-          sub={stats.isClockedIn ? "Clocked in" : "Not clocked in"}
-          color={stats.isClockedIn ? "accent" : "red"}
-        />
-      </div>
-
-      {isAdmin && (
-        <AttendanceChartsSection
-          title="Attendance Overview"
-          description="Daily and monthly attendee versus absentee headcount based on recorded employee and member clock activity."
-          dailyData={attendanceOverview.dailyData}
-          monthlyData={attendanceOverview.monthlyData}
-          loading={attendanceLoading}
-        />
+      {dashboardError && (
+        <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger animate-fade-up">
+          {dashboardError}
+        </div>
       )}
 
-      {/* Chart + Activity */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Weekly chart */}
-        <div className="card p-5 lg:col-span-2">
-          <h3 className="font-display font-semibold text-white mb-4">This Week's Hours</h3>
-          <ResponsiveContainer width="100%" height={200}>
+      <div className={`grid gap-4 ${isAdmin ? "grid-cols-2 xl:grid-cols-3" : "grid-cols-2"}`}>
+        <StatCard icon={Clock} label="Today's Hours" value={`${stats.todayHours}h`} sub="Logged today" color="accent" />
+        <StatCard icon={TrendingUp} label="This Week" value={`${stats.weekHours}h`} sub="Mon - Sun" color="blue" />
+        {isAdmin && (
+          <>
+            <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="blue" />
+            <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="accent" />
+            <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="yellow" />
+            <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="red" />
+          </>
+        )}
+      </div>
+
+      <div className={`grid gap-4 ${isAdmin ? "lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]" : "grid-cols-1"}`}>
+        <div className="card p-5">
+          <h3 className="mb-4 font-display text-white text-lg font-semibold">This Week&apos;s Hours</h3>
+          <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00e5be" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#00e5be" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#28c7d9" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#28c7d9" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
               <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="hours" stroke="#00e5be" strokeWidth={2} fill="url(#hoursGrad)" dot={{ fill: "#00e5be", strokeWidth: 0, r: 3 }} />
+              <Tooltip content={<HoursTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="hours"
+                stroke="#28c7d9"
+                strokeWidth={2}
+                fill="url(#hoursGrad)"
+                dot={{ fill: "#28c7d9", strokeWidth: 0, r: 3 }}
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Recent activity */}
-        <div className="card p-5">
-          <h3 className="font-display font-semibold text-white mb-4">Recent Activity</h3>
-          {recentActivity.length === 0 ? (
-            <p className="text-slate-500 text-sm">No clock activity yet this month</p>
-          ) : (
-            <div className="space-y-3">
-              {recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${activity.type === "in" ? "bg-accent" : "bg-danger"}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium capitalize">
-                      {activity.actorLabel ? `${activity.actorLabel} clock ${activity.type}` : `Clock ${activity.type}`}
-                    </p>
-                    <p className="text-slate-500 text-xs truncate">
-                      {[activity.personType, activity.locationName || "—"].filter(Boolean).join(" • ")}
-                    </p>
-                  </div>
-                  <p className="text-slate-400 text-xs flex-shrink-0">{format(parseISO(activity.timestamp), "HH:mm")}</p>
-                </div>
-              ))}
+        {isAdmin && (
+          <div className="card p-5">
+            <div className="mb-4">
+              <h3 className="font-display text-lg font-semibold text-white">Status Breakdown</h3>
+              <p className="mt-1 text-sm text-slate-400">Today&apos;s member attendance split by on-time, late, and absent.</p>
             </div>
-          )}
+
+            {loading ? (
+              <div className="flex h-[220px] items-center justify-center text-slate-500">Loading...</div>
+            ) : statusBreakdown.length === 0 ? (
+              <div className="flex h-[220px] items-center justify-center text-slate-500">No attendance status data yet.</div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={statusBreakdown}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={52}
+                      outerRadius={82}
+                      paddingAngle={3}
+                    >
+                      {statusBreakdown.map((entry, index) => (
+                        <Cell key={entry.name} fill={entry.fill || PIE_COLORS[index % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<StatusTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {statusBreakdown.map((slice) => (
+                    <div key={slice.name} className="rounded-2xl border border-slate-800 bg-slate-950/35 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.fill }} />
+                        <span className="text-xs uppercase tracking-wide text-slate-500">{slice.name}</span>
+                      </div>
+                      <p className="mt-2 font-display text-2xl font-bold text-white">{slice.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="card p-5">
+        <div className="mb-4">
+          <h3 className="font-display text-lg font-semibold text-white">Recent Clock In / Out</h3>
+          <p className="mt-1 text-sm text-slate-400">
+            {isAdmin ? "Latest employee and member clock events." : "Your latest clock events."}
+          </p>
         </div>
+
+        {recentClockRows.length === 0 ? (
+          <div className="py-8 text-center text-sm text-slate-500">No recent clock events yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800">
+                  <th className="table-header px-4 py-3 text-left">Name</th>
+                  <th className="table-header px-4 py-3 text-left">Type</th>
+                  <th className="table-header px-4 py-3 text-left">Action</th>
+                  <th className="table-header px-4 py-3 text-left">Location</th>
+                  <th className="table-header px-4 py-3 text-left">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentClockRows.map((activity) => (
+                  <tr key={activity.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                    <td className="px-4 py-3 text-white">{activity.actorLabel || "You"}</td>
+                    <td className="px-4 py-3 text-slate-400">{activity.personType || "Employee"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`badge ${activity.type === "in" ? "badge-green" : "badge-red"}`}>
+                        Clock {activity.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">{activity.locationName || "-"}</td>
+                    <td className="px-4 py-3 text-slate-400">{formatClockTime(activity.timestamp)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

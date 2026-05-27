@@ -30,31 +30,31 @@ const TAB_CONFIG = [
   {
     id: "general",
     label: "General",
-    description: "Foundational organization settings used across reports, attendance checks, and defaults.",
+    description: "",
     icon: Settings2,
   },
   {
     id: "email",
     label: "Email/SMTP",
-    description: "Configure the email sender, reply handling, and welcome-message behavior.",
+    description: "",
     icon: Mail,
   },
   {
     id: "attendance",
     label: "Attendance Rules",
-    description: "Define how the system classifies presence, lateness, half-days, and overtime.",
+    description: "",
     icon: CalendarClock,
   },
   {
     id: "notifications",
     label: "Notifications",
-    description: "Choose which events trigger alerts and when summary emails are sent.",
+    description: "",
     icon: Bell,
   },
   {
     id: "account",
     label: "Account",
-    description: "Manage your personal profile information, account details, and Face Clock setup.",
+    description: "",
     icon: User,
   },
 ];
@@ -721,7 +721,7 @@ export default function SettingsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Summary Reports" description="Configure the admin inbox and scheduling rules for daily and weekly attendance summaries.">
+        <SectionCard title="Summary Reports">
           <Field label="Admin Notification Email" hint="Receives late, absent, and summary alerts.">
             <input
               type="email"
@@ -911,10 +911,7 @@ export default function SettingsPage() {
           <aside className="animate-fade-up xl:sticky xl:top-6 xl:self-start">
             <div className="card p-4">
               <p className="px-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Settings Tabs</p>
-              <p className="mb-4 mt-2 px-2 text-sm leading-6 text-slate-400">
-                Choose a tab on the left, edit the active panel on the right, then save when you're ready.
-              </p>
-              <div className="space-y-2">
+              <div className="mt-4 space-y-2">
                 {TAB_CONFIG.map((tab) => (
                   <TabButton
                     key={tab.id}
@@ -940,15 +937,9 @@ export default function SettingsPage() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-display text-xl font-semibold text-white">{activeTabMeta.label}</h3>
-                  <p className="mt-1 text-sm text-slate-400">{activeTabMeta.description}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="badge badge-blue">
-                      {storageMode === "supabase" ? "Shared via Supabase" : "Browser storage mode"}
-                    </span>
-                    <span className="badge badge-green">
-                      {isImmediateApplyTab ? "Applies immediately on save" : "Saved instantly"}
-                    </span>
-                  </div>
+                  {activeTabMeta.description && (
+                    <p className="mt-1 text-sm text-slate-400">{activeTabMeta.description}</p>
+                  )}
                 </div>
               </div>
               {remoteNotice && (
