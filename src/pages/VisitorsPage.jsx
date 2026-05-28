@@ -27,7 +27,26 @@ const EMPTY_FORM = {
 
 function isMissingVisitorsTable(error) {
   const message = error?.message || "";
-  return /visitors/i.test(message) && /(does not exist|not found|relation)/i.test(message);
+  return /visitors/i.test(message)
+    && /(does not exist|not found|relation|schema cache)/i.test(message)
+    && !/column/i.test(message);
+}
+
+function isMissingVisitorsColumn(error) {
+  const message = error?.message || "";
+  return /visitors/i.test(message) && /column/i.test(message) && /(not found|schema cache)/i.test(message);
+}
+
+function visitorsSchemaHelp(error) {
+  if (isMissingVisitorsColumn(error)) {
+    return "The visitors table exists, but it is missing one or more required columns. Re-run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.";
+  }
+
+  if (isMissingVisitorsTable(error)) {
+    return "The visitors table is missing. Run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.";
+  }
+
+  return "";
 }
 
 function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
@@ -233,8 +252,9 @@ export default function VisitorsPage() {
 
     if (visitorsResult.error) {
       setVisitors([]);
-      if (isMissingVisitorsTable(visitorsResult.error)) {
-        setSchemaError("The visitors table is missing. Run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.");
+      const schemaHelp = visitorsSchemaHelp(visitorsResult.error);
+      if (schemaHelp) {
+        setSchemaError(schemaHelp);
       } else {
         setError(visitorsResult.error.message || "Unable to load visitors.");
       }
@@ -273,8 +293,9 @@ export default function VisitorsPage() {
     setSaving(false);
 
     if (saveError) {
-      if (isMissingVisitorsTable(saveError)) {
-        setSchemaError("The visitors table is missing. Run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.");
+      const schemaHelp = visitorsSchemaHelp(saveError);
+      if (schemaHelp) {
+        setSchemaError(schemaHelp);
       } else {
         setError(saveError.message || "Unable to save visitor.");
       }
@@ -291,8 +312,9 @@ export default function VisitorsPage() {
     const { error: deleteError } = await supabase.from("visitors").delete().eq("id", visitorId);
 
     if (deleteError) {
-      if (isMissingVisitorsTable(deleteError)) {
-        setSchemaError("The visitors table is missing. Run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.");
+      const schemaHelp = visitorsSchemaHelp(deleteError);
+      if (schemaHelp) {
+        setSchemaError(schemaHelp);
       } else {
         setError(deleteError.message || "Unable to delete visitor.");
       }

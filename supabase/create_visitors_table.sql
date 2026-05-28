@@ -1,25 +1,77 @@
 create table if not exists public.visitors (
-  id uuid primary key default gen_random_uuid(),
-  full_name text not null,
-  company_name text,
-  purpose_of_visit text not null,
-  host_member_id uuid,
-  phone text,
-  email text,
-  notes text,
-  visit_date date not null default current_date,
-  created_by uuid,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint visitors_host_member_id_fkey
-    foreign key (host_member_id)
-    references public.members (id)
-    on delete set null,
-  constraint visitors_created_by_fkey
-    foreign key (created_by)
-    references public.profiles (id)
-    on delete set null
+  id uuid primary key default gen_random_uuid()
 );
+
+alter table public.visitors
+  add column if not exists full_name text,
+  add column if not exists company_name text,
+  add column if not exists purpose_of_visit text,
+  add column if not exists host_member_id uuid,
+  add column if not exists phone text,
+  add column if not exists email text,
+  add column if not exists notes text,
+  add column if not exists visit_date date default current_date,
+  add column if not exists created_by uuid,
+  add column if not exists created_at timestamptz default now(),
+  add column if not exists updated_at timestamptz default now();
+
+update public.visitors
+set
+  full_name = coalesce(nullif(trim(full_name), ''), 'Unknown visitor'),
+  purpose_of_visit = coalesce(nullif(trim(purpose_of_visit), ''), 'Visit'),
+  visit_date = coalesce(visit_date, current_date),
+  created_at = coalesce(created_at, now()),
+  updated_at = coalesce(updated_at, now())
+where full_name is null
+  or trim(full_name) = ''
+  or purpose_of_visit is null
+  or trim(purpose_of_visit) = ''
+  or visit_date is null
+  or created_at is null
+  or updated_at is null;
+
+alter table public.visitors
+  alter column full_name set not null,
+  alter column purpose_of_visit set not null,
+  alter column visit_date set not null,
+  alter column visit_date set default current_date,
+  alter column created_at set not null,
+  alter column created_at set default now(),
+  alter column updated_at set not null,
+  alter column updated_at set default now();
+
+do $$
+begin
+  if to_regclass('public.members') is not null
+    and not exists (
+      select 1
+      from pg_constraint
+      where conname = 'visitors_host_member_id_fkey'
+        and conrelid = 'public.visitors'::regclass
+    )
+  then
+    alter table public.visitors
+      add constraint visitors_host_member_id_fkey
+      foreign key (host_member_id)
+      references public.members (id)
+      on delete set null;
+  end if;
+
+  if to_regclass('public.profiles') is not null
+    and not exists (
+      select 1
+      from pg_constraint
+      where conname = 'visitors_created_by_fkey'
+        and conrelid = 'public.visitors'::regclass
+    )
+  then
+    alter table public.visitors
+      add constraint visitors_created_by_fkey
+      foreign key (created_by)
+      references public.profiles (id)
+      on delete set null;
+  end if;
+end $$;
 
 create index if not exists visitors_created_at_idx on public.visitors (created_at desc);
 create index if not exists visitors_host_member_id_idx on public.visitors (host_member_id);
@@ -54,3 +106,5 @@ on public.visitors
 for delete
 to authenticated
 using (auth.uid() = created_by or public.is_admin_or_manager());
+
+notify pgrst, 'reload schema';

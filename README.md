@@ -22,6 +22,9 @@ Open `src/lib/supabase.js` and copy the SQL schema from the comments. Run it in 
 If you already ran the older policies and see `infinite recursion detected in policy for relation "profiles"`, also run:
 `supabase/fix_recursive_profiles_rls.sql`
 
+For the Settings page, also run:
+`supabase/create_system_settings.sql`
+
 ### 3. Configure environment variables
 Create a `.env` file in the project root:
 ```
