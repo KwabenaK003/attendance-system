@@ -1,6 +1,7 @@
 import { SUPABASE_CONFIG_ERROR, supabase } from "./supabase";
 
 const STORAGE_KEY = "attendance-system:system-settings";
+const REMOTE_DISABLED_KEY = "attendance-system:system-settings-remote-disabled";
 const SETTINGS_ROW_ID = "default";
 
 export const WEEK_DAYS = [
@@ -94,6 +95,34 @@ function persistLocalSettings(settings) {
   }
 }
 
+function readSessionFlag(key) {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return window.sessionStorage.getItem(key) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionFlag(key, value) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    if (value) {
+      window.sessionStorage.setItem(key, "true");
+    } else {
+      window.sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage issues and rely on the next response fallback.
+  }
+}
+
 export function normalizeSystemSettings(input = {}) {
   const general = input.general || {};
   const email = input.email || {};
@@ -153,12 +182,47 @@ function emitSettingsUpdated(settings) {
 }
 
 function canUseRemoteStorage() {
-  return !SUPABASE_CONFIG_ERROR;
+  return !SUPABASE_CONFIG_ERROR && !readSessionFlag(REMOTE_DISABLED_KEY);
+}
+
+function markRemoteStorageUnavailable() {
+  writeSessionFlag(REMOTE_DISABLED_KEY, true);
+}
+
+function getErrorText(error) {
+  if (!error) {
+    return "";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  const parts = [
+    error.code,
+    error.message,
+    error.details,
+    error.hint,
+    error.status,
+    error.statusText,
+  ].filter(Boolean);
+
+  if (parts.length > 0) {
+    return parts.join(" ");
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function isMissingSystemSettingsTable(error) {
-  const message = error?.message || "";
-  return /system_settings/i.test(message) && /(does not exist|not found|relation)/i.test(message);
+  const message = getErrorText(error);
+
+  return /system_settings/i.test(message)
+    && /(does not exist|not found|relation|schema cache|could not find|undefined table|not in schema|42P01|404|PGRST20[0-9])/i.test(message);
 }
 
 export async function loadSystemSettings() {
@@ -177,16 +241,22 @@ export async function loadSystemSettings() {
 
     if (error) {
       if (isMissingSystemSettingsTable(error)) {
+        markRemoteStorageUnavailable();
         return { settings: localSettings, storageMode: "local" };
       }
-      return { settings: localSettings, storageMode: "local", remoteError: error.message || "Unable to sync settings." };
+      return { settings: localSettings, storageMode: "local", remoteError: getErrorText(error) || "Unable to sync settings." };
     }
 
     const normalized = normalizeSystemSettings(data?.settings || localSettings);
     persistLocalSettings(normalized);
     return { settings: normalized, storageMode: data?.settings ? "supabase" : "local" };
   } catch (error) {
-    return { settings: localSettings, storageMode: "local", remoteError: error.message || "Unable to sync settings." };
+    if (isMissingSystemSettingsTable(error)) {
+      markRemoteStorageUnavailable();
+      return { settings: localSettings, storageMode: "local" };
+    }
+
+    return { settings: localSettings, storageMode: "local", remoteError: getErrorText(error) || "Unable to sync settings." };
   }
 }
 
@@ -210,14 +280,20 @@ export async function saveSystemSettings(nextSettings) {
 
     if (error) {
       if (isMissingSystemSettingsTable(error)) {
+        markRemoteStorageUnavailable();
         return { settings: normalized, storageMode: "local" };
       }
 
-      return { settings: normalized, storageMode: "local", remoteError: error.message || "Unable to sync settings." };
+      return { settings: normalized, storageMode: "local", remoteError: getErrorText(error) || "Unable to sync settings." };
     }
 
     return { settings: normalized, storageMode: "supabase" };
   } catch (error) {
-    return { settings: normalized, storageMode: "local", remoteError: error.message || "Unable to sync settings." };
+    if (isMissingSystemSettingsTable(error)) {
+      markRemoteStorageUnavailable();
+      return { settings: normalized, storageMode: "local" };
+    }
+
+    return { settings: normalized, storageMode: "local", remoteError: getErrorText(error) || "Unable to sync settings." };
   }
 }
