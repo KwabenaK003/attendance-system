@@ -93,12 +93,13 @@ to authenticated
 with check (auth.uid() = created_by);
 
 drop policy if exists "Creators or managers update visitors" on public.visitors;
-create policy "Creators or managers update visitors"
+drop policy if exists "Authenticated users can update visitors" on public.visitors;
+create policy "Authenticated users can update visitors"
 on public.visitors
 for update
 to authenticated
-using (auth.uid() = created_by or public.is_admin_or_manager())
-with check (auth.uid() = created_by or public.is_admin_or_manager());
+using (true)
+with check (true);
 
 drop policy if exists "Creators or managers delete visitors" on public.visitors;
 create policy "Creators or managers delete visitors"

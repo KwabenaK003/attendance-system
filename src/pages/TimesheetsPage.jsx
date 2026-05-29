@@ -1,8 +1,23 @@
 import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
+import {
+  ArrowLeft,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Download,
+  Globe,
+  MapPin,
+  MonitorSmartphone,
+  MoreVertical,
+  StickyNote,
+  UserRound,
+  Wifi,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
-import { ChevronLeft, ChevronRight, Download, Clock, Globe, MapPin, MonitorSmartphone, Wifi } from "lucide-react";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { hasManagementAccess } from "../lib/workforce";
 import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
@@ -19,6 +34,7 @@ function hasCapturedDetails(details) {
     || details?.ipAddress
     || details?.networkName
     || details?.locationName
+    || details?.verificationMethod
     || details?.recordedAt
   );
 }
@@ -29,39 +45,46 @@ function getCapturedDetailValue(details, key) {
 
 function CapturedDetailsCard({ title, details }) {
   if (!hasCapturedDetails(details)) {
-    return null;
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
+        No {title.toLowerCase()} capture details.
+      </div>
+    );
   }
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</p>
-      <div className="mt-2 space-y-2 text-xs text-slate-300">
+      <div className="mt-3 space-y-2 text-sm text-slate-300">
         {details.deviceName && (
           <p className="flex items-center gap-2">
-            <MonitorSmartphone className="h-3.5 w-3.5 text-accent" />
+            <MonitorSmartphone className="h-4 w-4 text-accent" />
             <span>{details.deviceName}</span>
           </p>
         )}
         {details.ipAddress && (
           <p className="flex items-center gap-2">
-            <Globe className="h-3.5 w-3.5 text-accent" />
+            <Globe className="h-4 w-4 text-accent" />
             <span>IP: {details.ipAddress}</span>
           </p>
         )}
         {details.networkName && (
           <p className="flex items-center gap-2">
-            <Wifi className="h-3.5 w-3.5 text-accent" />
+            <Wifi className="h-4 w-4 text-accent" />
             <span>Network: {details.networkName}</span>
           </p>
         )}
         {details.locationName && (
           <p className="flex items-center gap-2">
-            <MapPin className="h-3.5 w-3.5 text-accent" />
+            <MapPin className="h-4 w-4 text-accent" />
             <span>Location: {details.locationName}</span>
           </p>
         )}
+        {details.verificationMethod && (
+          <p className="text-xs text-slate-400">Method: {details.verificationMethod}</p>
+        )}
         {details.recordedAt && (
-          <p className="text-[11px] text-slate-500">
+          <p className="text-xs text-slate-500">
             Recorded at {format(parseISO(details.recordedAt), "MMM d, yyyy HH:mm:ss")}
           </p>
         )}
@@ -70,18 +93,168 @@ function CapturedDetailsCard({ title, details }) {
   );
 }
 
+function DetailField({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-white">{value || "—"}</p>
+    </div>
+  );
+}
+
+function AttendanceLogDetailPage({ source, recordId }) {
+  const navigate = useNavigate();
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    void fetchDetail();
+  }, [source, recordId]);
+
+  async function fetchDetail() {
+    setLoading(true);
+    setError("");
+
+    try {
+      if (source === "member") {
+        const { data: entry, error: entryError } = await supabase
+          .from("member_entries")
+          .select("*, members(*)")
+          .eq("id", recordId)
+          .maybeSingle();
+
+        if (entryError) throw entryError;
+        if (!entry) throw new Error("Attendance record not found.");
+
+        const session = buildMemberSessions([entry])[0];
+        setDetail({
+          ...session,
+          person: entry.members || {},
+          rawNote: entry.note || "",
+        });
+        return;
+      }
+
+      const { data: punchIn, error: punchInError } = await supabase
+        .from("punches")
+        .select("*")
+        .eq("id", recordId)
+        .maybeSingle();
+
+      if (punchInError) throw punchInError;
+      if (!punchIn) throw new Error("Attendance record not found.");
+
+      const [{ data: profileRow, error: profileError }, { data: punchOutRows, error: punchOutError }] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", punchIn.user_id).maybeSingle(),
+        supabase
+          .from("punches")
+          .select("*")
+          .eq("user_id", punchIn.user_id)
+          .eq("type", "out")
+          .gt("timestamp", punchIn.timestamp)
+          .order("timestamp", { ascending: true })
+          .limit(1),
+      ]);
+
+      if (profileError) throw profileError;
+      if (punchOutError) throw punchOutError;
+
+      const punchOut = punchOutRows?.[0] || null;
+      const session = buildPunchSessions([punchIn, punchOut].filter(Boolean), {
+        getPersonName: () => profileRow?.full_name || "Employee",
+      })[0];
+
+      setDetail({
+        ...session,
+        person: profileRow || {},
+        rawNote: [punchIn.note, punchOut?.note].filter(Boolean).join("\n\n") || "",
+      });
+    } catch (detailError) {
+      setError(detailError.message || "Unable to load attendance details.");
+      setDetail(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-white">Attendance Details</h2>
+          <p className="mt-1 text-sm text-slate-400">Full person, clock, capture, and notes record.</p>
+        </div>
+        <button onClick={() => navigate("/timesheets")} className="btn-secondary text-sm">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Attendance Log
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="card p-8 text-center text-slate-500">Loading…</div>
+      ) : error ? (
+        <div className="card p-8 text-center text-danger">{error}</div>
+      ) : (
+        <div className="card animate-fade-up p-6">
+          <div className="mb-6 flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/30 p-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/30 to-accent/10 text-xl font-bold text-accent">
+              {(detail.personName || detail.person?.full_name || "?")
+                .split(" ")
+                .map((part) => part[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-base font-medium text-white">{detail.personName || detail.person?.full_name || "Unknown Person"}</p>
+              <p className="truncate text-sm text-slate-500">{detail.person?.email || detail.person?.department || "No profile contact details"}</p>
+              <span className="badge badge-blue mt-2 text-xs">{detail.personType}</span>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <DetailField label="Person" value={detail.personName || detail.person?.full_name} />
+            <DetailField label="Type" value={detail.personType} />
+            <DetailField label="Date" value={detail.clockIn ? format(parseISO(detail.clockIn), "EEEE, MMMM d, yyyy") : ""} />
+            <DetailField label="Duration" value={formatDuration(detail.minutes || 0)} />
+            <DetailField label="Clock In" value={detail.clockIn ? format(parseISO(detail.clockIn), "HH:mm:ss") : ""} />
+            <DetailField label="Clock Out" value={detail.clockOut ? format(parseISO(detail.clockOut), "HH:mm:ss") : "Active"} />
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <CapturedDetailsCard title="Clock In Capture" details={detail.capturedIn} />
+            <CapturedDetailsCard title="Clock Out Capture" details={detail.capturedOut} />
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/35 p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
+              <StickyNote className="h-4 w-4 text-accent" />
+              Notes
+            </div>
+            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-300">{detail.rawNote || detail.note || "No notes recorded."}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TimesheetsPage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { source, recordId } = useParams();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [totalMinutes, setTotalMinutes] = useState(0);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const isAdmin = hasManagementAccess(profile?.role);
 
   useEffect(() => { fetchTimesheets(); }, [profile?.id, profile?.role, currentMonth]);
 
   useEffect(() => {
-    if (!profile?.id) {
+    if (!profile?.id || source || recordId) {
       return undefined;
     }
 
@@ -97,10 +270,14 @@ export default function TimesheetsPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [profile?.id, currentMonth, isAdmin]);
+  }, [profile?.id, currentMonth, isAdmin, source, recordId]);
+
+  if (source && recordId) {
+    return <AttendanceLogDetailPage source={source} recordId={recordId} />;
+  }
 
   async function fetchTimesheets() {
-    if (!profile) return;
+    if (!profile || source || recordId) return;
     setLoading(true);
     const start = startOfMonth(currentMonth);
     const end = endOfMonth(currentMonth);
@@ -130,7 +307,7 @@ export default function TimesheetsPage() {
       isAdmin
         ? supabase
           .from("member_entries")
-          .select("id, member_id, punch_in, punch_out, hours, note, location_name, members(full_name)")
+          .select("*, members(full_name)")
           .gte("punch_in", start.toISOString())
           .lte("punch_in", end.toISOString())
           .order("punch_in", { ascending: true })
@@ -164,7 +341,8 @@ export default function TimesheetsPage() {
 
   function exportCSV() {
     const header = [
-      ...(isAdmin ? ["Person", "Type"] : []),
+      "Person",
+      "Type",
       "Date",
       "Clock In",
       "Clock Out",
@@ -182,7 +360,8 @@ export default function TimesheetsPage() {
       "Note",
     ];
     const rows = sessions.map((s) => [
-      ...(isAdmin ? [s.personName || "Employee", s.personType] : []),
+      s.personName || "Employee",
+      s.personType,
       s.date,
       format(parseISO(s.clockIn), "HH:mm:ss"),
       s.clockOut ? format(parseISO(s.clockOut), "HH:mm:ss") : "Active",
@@ -204,7 +383,7 @@ export default function TimesheetsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `timesheet-${format(currentMonth, "yyyy-MM")}.csv`;
+    a.download = `attendance-log-${format(currentMonth, "yyyy-MM")}.csv`;
     a.click();
   }
 
@@ -213,12 +392,11 @@ export default function TimesheetsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display font-bold text-2xl text-white">Timesheets</h2>
+          <h2 className="font-display font-bold text-2xl text-white">Attendance Log</h2>
           <p className="text-slate-400 text-sm mt-1">
-            {isAdmin ? "Detailed employee and member time records" : "Your detailed time records"}
+            {isAdmin ? "Staff and member clock activity with details one click away." : "Your clock activity with details one click away."}
           </p>
         </div>
         <button onClick={exportCSV} className="btn-secondary flex items-center gap-2 text-sm">
@@ -226,20 +404,39 @@ export default function TimesheetsPage() {
         </button>
       </div>
 
-      {/* Month navigation */}
-      <div className="flex items-center justify-between card px-5 py-3 animate-fade-up">
+      <div className="relative flex items-center justify-between card px-5 py-3 animate-fade-up">
         <button onClick={() => setCurrentMonth((m) => subMonths(m, 1))} className="text-slate-400 hover:text-white transition-colors">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h3 className="font-display font-semibold text-white text-lg">
+        <button
+          type="button"
+          onClick={() => setShowMonthPicker((current) => !current)}
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 font-display text-lg font-semibold text-white transition-colors hover:bg-slate-800/70"
+        >
+          <CalendarDays className="h-4 w-4 text-accent" />
           {format(currentMonth, "MMMM yyyy")}
-        </h3>
+        </button>
         <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))} className="text-slate-400 hover:text-white transition-colors">
           <ChevronRight className="w-5 h-5" />
         </button>
+
+        {showMonthPicker && (
+          <div className="absolute left-1/2 top-full z-[80] mt-2 w-72 -translate-x-1/2 rounded-2xl border border-slate-800 bg-slate-950 p-4 shadow-2xl shadow-black/40">
+            <label className="label">Select Month & Year</label>
+            <input
+              type="month"
+              className="input"
+              value={format(currentMonth, "yyyy-MM")}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                setCurrentMonth(new Date(`${event.target.value}-01T00:00:00`));
+                setShowMonthPicker(false);
+              }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4 animate-fade-up">
         {[
           { label: "Total Hours", value: formatDuration(totalMinutes), color: "text-accent" },
@@ -253,60 +450,57 @@ export default function TimesheetsPage() {
         ))}
       </div>
 
-      {/* Sessions table */}
       <div className="card animate-fade-up overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800">
-                {isAdmin && <th className="table-header px-5 py-3 text-left">Person</th>}
-                {isAdmin && <th className="table-header px-5 py-3 text-left">Type</th>}
+                <th className="table-header px-5 py-3 text-left">Person</th>
+                <th className="table-header px-5 py-3 text-left">Type</th>
                 <th className="table-header px-5 py-3 text-left">Date</th>
                 <th className="table-header px-5 py-3 text-left">Clock In</th>
                 <th className="table-header px-5 py-3 text-left">Clock Out</th>
-                <th className="table-header px-5 py-3 text-left">Duration</th>
-                <th className="table-header px-5 py-3 text-left">Captured Details</th>
-                <th className="table-header px-5 py-3 text-left">Note</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={isAdmin ? 8 : 6} className="text-center py-12 text-slate-500">Loading…</td></tr>
+                <tr><td colSpan={5} className="text-center py-12 text-slate-500">Loading…</td></tr>
               ) : sessions.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 6} className="text-center py-12">
+                  <td colSpan={5} className="text-center py-12">
                     <Clock className="w-8 h-8 text-slate-700 mx-auto mb-2" />
                     <p className="text-slate-500">No time records for this month</p>
                   </td>
                 </tr>
               ) : (
                 sessions.map((s) => (
-                  <tr key={s.id} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
-                    {isAdmin && <td className="px-5 py-3 font-medium text-white">{s.personName || "Employee"}</td>}
-                    {isAdmin && <td className="px-5 py-3 text-slate-400 text-xs">{s.personType}</td>}
+                  <tr key={`${s.source}-${s.id}`} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
+                    <td className="px-5 py-3 font-medium text-white">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/15 bg-accent/10 text-accent">
+                          <UserRound className="h-4 w-4" />
+                        </div>
+                        <span>{s.personName || "Employee"}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-slate-400 text-xs">{s.personType}</td>
                     <td className="px-5 py-3 font-medium text-white">{format(parseISO(s.clockIn), "EEE, MMM d")}</td>
                     <td className="px-5 py-3 font-mono text-slate-300">{format(parseISO(s.clockIn), "HH:mm")}</td>
                     <td className="px-5 py-3 font-mono text-slate-300">
-                      {s.clockOut ? format(parseISO(s.clockOut), "HH:mm") : (
-                        <span className="badge-green">Active</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`font-medium ${s.active ? "text-accent" : "text-white"}`}>
-                        {formatDuration(s.minutes)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 min-w-[280px] align-top">
-                      <div className="space-y-2">
-                        <CapturedDetailsCard title="Clock In" details={s.capturedIn} />
-                        <CapturedDetailsCard title="Clock Out" details={s.capturedOut} />
-                        {!hasCapturedDetails(s.capturedIn) && !hasCapturedDetails(s.capturedOut) && (
-                          <span className="text-slate-500 text-xs">—</span>
-                        )}
+                      <div className="flex items-center justify-between gap-3">
+                        <span>
+                          {s.clockOut ? format(parseISO(s.clockOut), "HH:mm") : (
+                            <span className="badge-green">Active</span>
+                          )}
+                        </span>
+                        <button
+                          onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+                          aria-label={`Open details for ${s.personName || "Employee"}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
                       </div>
-                    </td>
-                    <td className="px-5 py-3 text-slate-400 text-xs max-w-[220px] align-top">
-                      <p className="break-words">{s.note || "—"}</p>
                     </td>
                   </tr>
                 ))

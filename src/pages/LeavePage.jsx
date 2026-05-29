@@ -1,20 +1,38 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, differenceInCalendarDays } from "date-fns";
-import { Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical } from "lucide-react";
+import { ArrowLeft, Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical, Search, UserRound, Copy } from "lucide-react";
 import { hasManagementAccess } from "../lib/workforce";
+import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 
-const LEAVE_TYPES = ["sick", "vacation", "personal", "maternal", "study", "other"];
+const LEAVE_TYPES = ["sick", "vacation", "personal", "other"];
 const STATUS_BADGE = {
   pending: "badge-yellow",
   approved: "badge-green",
   rejected: "badge-red",
 };
 const OTHER_LEAVE_TYPE_MARKER = "__OTHER_LEAVE_TYPE__:";
+const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
+
+function splitLeaveMember(reason = "") {
+  const lines = String(reason || "").split("\n");
+  const markerLine = lines.find((line) => line.startsWith(LEAVE_MEMBER_MARKER));
+  if (!markerLine) {
+    return { memberId: "", memberName: "", reason: lines.join("\n").trim() };
+  }
+
+  const [memberId = "", memberName = ""] = markerLine.slice(LEAVE_MEMBER_MARKER.length).split("|");
+  return {
+    memberId,
+    memberName,
+    reason: lines.filter((line) => line !== markerLine).join("\n").trim(),
+  };
+}
 
 function splitLeaveReason(reason = "") {
-  const value = reason || "";
+  const value = splitLeaveMember(reason).reason || "";
   if (!value.startsWith(OTHER_LEAVE_TYPE_MARKER)) {
     return { otherType: "", reason: value };
   }
@@ -33,35 +51,72 @@ function splitLeaveReason(reason = "") {
   };
 }
 
-function buildLeaveReason(type, otherType, reason) {
+function buildLeaveReason(type, otherType, reason, memberId, memberName) {
   const trimmedReason = reason.trim();
-  if (type !== "other") {
-    return trimmedReason;
-  }
-
   const trimmedOtherType = otherType.trim();
   return [
-    trimmedOtherType ? `${OTHER_LEAVE_TYPE_MARKER}${trimmedOtherType}` : "",
+    memberId ? `${LEAVE_MEMBER_MARKER}${memberId}|${memberName || ""}` : "",
+    type === "other" && trimmedOtherType ? `${OTHER_LEAVE_TYPE_MARKER}${trimmedOtherType}` : "",
     trimmedReason,
   ].filter(Boolean).join("\n");
 }
 
 export default function LeavePage() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { requestId } = useParams();
+  const location = useLocation();
   const [requests, setRequests] = useState([]);
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
+  const [form, setForm] = useState({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
   const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [requestLinkCopied, setRequestLinkCopied] = useState(false);
   const isAdmin = hasManagementAccess(profile?.role);
+  const creatingViaRoute = location.pathname === "/leave/new";
+  const adminCreateViaRoute = location.pathname === "/leave/admin/new";
+  const editingViaRoute = Boolean(requestId);
+  const leaveRequestUrl = buildShareUrl("/leave/new");
 
   useEffect(() => {
     void fetchRequests();
   }, [profile?.id, isAdmin]);
+
+  useEffect(() => {
+    if (creatingViaRoute || adminCreateViaRoute) {
+      setEditingRequestId(null);
+      setForm({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
+      setError("");
+      return;
+    }
+
+    if (!editingViaRoute || loading) {
+      return;
+    }
+
+    const request = requests.find((entry) => String(entry.id) === requestId);
+    if (request) {
+      const member = splitLeaveMember(request.reason);
+      const { otherType, reason } = splitLeaveReason(request.reason);
+      setEditingRequestId(request.id);
+      setForm({
+        member_id: member.memberId,
+        member_name: member.memberName,
+        member_search: member.memberName,
+        type: request.type || "vacation",
+        other_type: otherType,
+        start_date: request.start_date || "",
+        end_date: request.end_date || "",
+        reason,
+      });
+      setError("");
+    }
+  }, [adminCreateViaRoute, creatingViaRoute, editingViaRoute, loading, requestId, requests]);
 
   useEffect(() => {
     if (!openActionMenuId) {
@@ -78,6 +133,12 @@ export default function LeavePage() {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [openActionMenuId]);
 
+  useEffect(() => {
+    if (!requestLinkCopied) return undefined;
+    const timeoutId = window.setTimeout(() => setRequestLinkCopied(false), 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [requestLinkCopied]);
+
   async function fetchRequests() {
     if (!profile?.id) {
       setRequests([]);
@@ -89,13 +150,16 @@ export default function LeavePage() {
     setListError("");
 
     try {
+      const membersQuery = supabase.from("members").select("id, full_name").order("full_name", { ascending: true });
       let q = supabase.from("leave_requests").select("*, profiles!leave_requests_user_id_fkey(full_name)").order("created_at", { ascending: false });
       if (!isAdmin) q = q.eq("user_id", profile.id);
 
-      const { data, error: requestError } = await q;
+      const [{ data, error: requestError }, { data: memberRows, error: membersError }] = await Promise.all([q, membersQuery]);
       if (requestError) throw requestError;
+      if (membersError) throw membersError;
 
       setRequests(data || []);
+      setMembers(memberRows || []);
     } catch (err) {
       setListError(err.message || "Failed to load leave requests");
       setRequests([]);
@@ -105,14 +169,18 @@ export default function LeavePage() {
   }
 
   function resetForm() {
-    setForm({ type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
+    setForm({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
     setEditingRequestId(null);
-    setShowForm(false);
     setError("");
     setOpenActionMenuId(null);
+    setMemberPickerOpen(false);
+    if (creatingViaRoute || adminCreateViaRoute || editingViaRoute) {
+      navigate("/leave");
+    }
   }
 
   async function submitRequest() {
+    if (creatingViaRoute && !form.member_id) { setError("Select the member requesting leave"); return; }
     if (!form.start_date || !form.end_date) { setError("Please fill all required fields"); return; }
     if (form.end_date < form.start_date) { setError("End date must be after start date"); return; }
     if (form.type === "other" && !form.other_type.trim()) { setError("Enter the leave type you are requesting"); return; }
@@ -128,7 +196,7 @@ export default function LeavePage() {
         start_date: form.start_date,
         end_date: form.end_date,
         hours: days * 8,
-        reason: buildLeaveReason(form.type, form.other_type, form.reason),
+        reason: buildLeaveReason(form.type, form.other_type, form.reason, form.member_id, form.member_name),
       };
 
       const { error: submitError } = editingRequestId
@@ -140,8 +208,16 @@ export default function LeavePage() {
 
       if (submitError) throw submitError;
 
+      if (creatingViaRoute) {
+        setForm({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
+        setMemberPickerOpen(false);
+        window.alert("Your leave request form is sent successfully");
+        return;
+      }
+
       resetForm();
       await fetchRequests();
+      navigate("/leave");
     } catch (err) {
       setError(err.message || `Failed to ${editingRequestId ? "update" : "submit"} leave request`);
     } finally {
@@ -163,18 +239,8 @@ export default function LeavePage() {
   }
 
   function startEditing(request) {
-    const { otherType, reason } = splitLeaveReason(request.reason);
-    setEditingRequestId(request.id);
-    setForm({
-      type: request.type || "vacation",
-      other_type: otherType,
-      start_date: request.start_date || "",
-      end_date: request.end_date || "",
-      reason,
-    });
-    setError("");
-    setShowForm(true);
     setOpenActionMenuId(null);
+    navigate(`/leave/${request.id}/edit`);
   }
 
   async function deleteRequest(request) {
@@ -197,7 +263,185 @@ export default function LeavePage() {
     await fetchRequests();
   }
 
+  async function copyLeaveRequestLink() {
+    try {
+      await copyTextToClipboard(leaveRequestUrl);
+      setRequestLinkCopied(true);
+    } catch (copyError) {
+      setListError(copyError.message || "Unable to copy leave request link.");
+    }
+  }
+
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const filteredMembers = members.filter((member) => {
+    const query = form.member_search.trim().toLowerCase();
+    if (!query) return true;
+    return member.full_name?.toLowerCase().includes(query);
+  });
+  const selectedRequest = editingViaRoute
+    ? requests.find((entry) => String(entry.id) === requestId) || null
+    : null;
+
+  const renderRequestForm = ({ standaloneForm = false, showMemberPicker = true } = {}) => (
+    <div className="card p-6 animate-fade-up border-accent/20">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-white">{editingRequestId ? "Edit Leave Request" : "New Leave Request"}</h3>
+          <p className="mt-1 text-sm text-slate-400">Capture the leave type, dates, and reason for this request.</p>
+        </div>
+        {!standaloneForm && (
+          <button onClick={resetForm} className="text-slate-400 hover:text-white" aria-label="Close leave form"><X className="w-5 h-5" /></button>
+        )}
+      </div>
+      {error && <p className="text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-2 mb-4">{error}</p>}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {showMemberPicker && (
+          <div>
+            <label className="label">Name *</label>
+            <button
+              type="button"
+              className="input text-left"
+              onClick={() => setMemberPickerOpen((current) => !current)}
+            >
+              {form.member_name || "Search member name"}
+            </button>
+            {memberPickerOpen && (
+              <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-2">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    className="input pl-10"
+                    value={form.member_search}
+                    onChange={(event) => setForm((current) => ({ ...current, member_search: event.target.value }))}
+                    placeholder="Type member name..."
+                    autoFocus
+                  />
+                </div>
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-800">
+                  {filteredMembers.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-slate-500">No members match your search.</p>
+                  ) : filteredMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => {
+                        setForm((current) => ({
+                          ...current,
+                          member_id: member.id,
+                          member_name: member.full_name || "",
+                          member_search: member.full_name || "",
+                        }));
+                        setMemberPickerOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                    >
+                      <UserRound className="h-4 w-4 text-accent" />
+                      {member.full_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div>
+          <label className="label">Leave Type</label>
+          <select className="input" value={form.type} onChange={set("type")}>
+            {LEAVE_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+          </select>
+        </div>
+        <div className={form.type === "other" ? "" : "hidden"}>
+          {form.type === "other" && (
+            <>
+              <label className="label">Other Leave Type</label>
+              <input
+                className="input"
+                placeholder="Enter leave type"
+                value={form.other_type}
+                onChange={set("other_type")}
+              />
+            </>
+          )}
+        </div>
+        <div>
+          <label className="label">Start Date</label>
+          <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
+        </div>
+        <div>
+          <label className="label">End Date</label>
+          <input type="date" className="input" value={form.end_date} onChange={set("end_date")} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="label">Reason (optional)</label>
+          <textarea className="input resize-none" rows={3} placeholder="Brief description…" value={form.reason} onChange={set("reason")} />
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button onClick={submitRequest} disabled={submitting} className="btn-primary flex items-center gap-2 disabled:opacity-50">
+          {submitting ? (editingRequestId ? "Saving…" : "Submitting…") : (editingRequestId ? "Save Changes" : "Submit Request")}
+        </button>
+        {!standaloneForm && <button onClick={resetForm} className="btn-secondary">Cancel</button>}
+      </div>
+    </div>
+  );
+
+  if (creatingViaRoute) {
+    return (
+      <div className="min-h-screen px-4 py-8 sm:px-6">
+        <div className="mx-auto max-w-3xl">
+          {renderRequestForm({ standaloneForm: true })}
+        </div>
+      </div>
+    );
+  }
+
+  if (adminCreateViaRoute) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
+          <div>
+            <h2 className="font-display font-bold text-2xl text-white">New Leave Request</h2>
+            <p className="text-slate-400 text-sm mt-1">Create a leave request for your signed-in account.</p>
+          </div>
+          <button onClick={() => navigate("/leave")} className="btn-secondary text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Leave Requests
+          </button>
+        </div>
+
+        {renderRequestForm({ showMemberPicker: false })}
+      </div>
+    );
+  }
+
+  if (editingViaRoute) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
+          <div>
+            <h2 className="font-display font-bold text-2xl text-white">
+              Edit Leave Request
+            </h2>
+            <p className="text-slate-400 text-sm mt-1">
+              Update this leave request.
+            </p>
+          </div>
+          <button onClick={() => navigate("/leave")} className="btn-secondary text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Leave Requests
+          </button>
+        </div>
+
+        {editingViaRoute && loading ? (
+          <div className="card p-8 text-center text-slate-500">Loading…</div>
+        ) : editingViaRoute && !selectedRequest ? (
+          <div className="card p-8 text-center text-slate-500">Leave request not found.</div>
+        ) : (
+          renderRequestForm()
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -206,70 +450,21 @@ export default function LeavePage() {
           <h2 className="font-display font-bold text-2xl text-white">Leave Requests</h2>
           <p className="text-slate-400 text-sm mt-1">{isAdmin ? "Manage all leave requests" : "Request and track your time off"}</p>
         </div>
-        <button
-          onClick={() => {
-            if (showForm && editingRequestId) {
-              resetForm();
-              return;
-            }
-            setShowForm(!showForm);
-            setError("");
-          }}
-          className="btn-primary flex items-center gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" /> New Request
-        </button>
-      </div>
-
-      {/* New request form */}
-      {showForm && (
-        <div className="card p-6 animate-fade-up border-accent/20">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-semibold text-white">{editingRequestId ? "Edit Leave Request" : "New Leave Request"}</h3>
-            <button onClick={resetForm} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
-          </div>
-          {error && <p className="text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-2 mb-4">{error}</p>}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Leave Type</label>
-              <select className="input" value={form.type} onChange={set("type")}>
-                {LEAVE_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-              </select>
-            </div>
-            <div>
-              {form.type === "other" && (
-                <>
-                  <label className="label">Other Leave Type</label>
-                  <input
-                    className="input"
-                    placeholder="Enter leave type"
-                    value={form.other_type}
-                    onChange={set("other_type")}
-                  />
-                </>
-              )}
-            </div>
-            <div>
-              <label className="label">Start Date</label>
-              <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
-            </div>
-            <div>
-              <label className="label">End Date</label>
-              <input type="date" className="input" value={form.end_date} onChange={set("end_date")} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="label">Reason (optional)</label>
-              <textarea className="input resize-none" rows={3} placeholder="Brief description…" value={form.reason} onChange={set("reason")} />
-            </div>
-          </div>
-          <div className="flex gap-3 mt-4">
-            <button onClick={submitRequest} disabled={submitting} className="btn-primary flex items-center gap-2 disabled:opacity-50">
-              {submitting ? (editingRequestId ? "Saving…" : "Submitting…") : (editingRequestId ? "Save Changes" : "Submit Request")}
-            </button>
-            <button onClick={resetForm} className="btn-secondary">Cancel</button>
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={copyLeaveRequestLink}
+            className="btn-secondary flex items-center gap-2 text-sm"
+          >
+            <Copy className="w-4 h-4" /> {requestLinkCopied ? "Copied" : "Copy Link"}
+          </button>
+          <button
+            onClick={() => navigate("/leave/admin/new")}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Plus className="w-4 h-4" /> Add New Request
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Requests list */}
       <div className="space-y-3 animate-fade-up">
@@ -288,6 +483,7 @@ export default function LeavePage() {
         ) : (
           requests.map((req) => {
             const days = differenceInCalendarDays(new Date(req.end_date), new Date(req.start_date)) + 1;
+            const leaveMember = splitLeaveMember(req.reason);
             const { otherType, reason } = splitLeaveReason(req.reason);
             const isOwnRequest = req.user_id === profile?.id;
             const canChangeStatus = isOwnRequest || isAdmin;
@@ -307,8 +503,8 @@ export default function LeavePage() {
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-white font-medium capitalize">{leaveLabel}</span>
                     <span className={`badge ${STATUS_BADGE[req.status] || "badge-blue"}`}>{req.status}</span>
-                    {isAdmin && req.profiles?.full_name && (
-                      <span className="text-slate-500 text-xs">— {req.profiles.full_name}</span>
+                    {(leaveMember.memberName || (isAdmin && req.profiles?.full_name)) && (
+                      <span className="text-slate-500 text-xs">— {leaveMember.memberName || req.profiles.full_name}</span>
                     )}
                   </div>
                   <p className="text-slate-400 text-sm">

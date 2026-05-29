@@ -49,18 +49,42 @@ function visitorsSchemaHelp(error) {
   return "";
 }
 
+function isUpdatedAtColumnError(error) {
+  const message = error?.message || "";
+  return /updated_at/i.test(message) && /(column|schema cache|not found)/i.test(message);
+}
+
 function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
-  const [form, setForm] = useState(initial ? { ...EMPTY_FORM, ...initial } : EMPTY_FORM);
+  const buildFormState = (visitor) => ({
+    ...EMPTY_FORM,
+    ...visitor,
+    host_member_id: visitor?.host_member_id || "",
+    visit_date: visitor?.visit_date ? format(new Date(visitor.visit_date), "yyyy-MM-dd") : EMPTY_FORM.visit_date,
+  });
+
+  const [form, setForm] = useState(initial ? buildFormState(initial) : EMPTY_FORM);
   const [error, setError] = useState("");
+  const [hostSearch, setHostSearch] = useState("");
+  const [hostPickerOpen, setHostPickerOpen] = useState(false);
 
   useEffect(() => {
-    setForm(initial ? { ...EMPTY_FORM, ...initial } : EMPTY_FORM);
+    setForm(initial ? buildFormState(initial) : EMPTY_FORM);
     setError("");
+    setHostSearch("");
+    setHostPickerOpen(false);
   }, [initial]);
 
   const set = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const filteredMembers = members.filter((member) => {
+    const query = hostSearch.trim().toLowerCase();
+    if (!query) return true;
+    return member.full_name?.toLowerCase().includes(query);
+  });
+  const selectedHost = members.find((member) => member.id === form.host_member_id);
 
-  async function handleSubmit() {
+  async function handleSubmit(event) {
+    event.preventDefault();
+
     if (!form.full_name.trim()) {
       setError("Visitor name is required.");
       return;
@@ -77,16 +101,20 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
     }
 
     setError("");
-    const result = await onSave(form);
-    if (result?.error) {
-      setError(result.error.message || "Unable to save visitor.");
+    try {
+      const result = await onSave(form);
+      if (result?.error) {
+        setError(result.error.message || "Unable to save visitor.");
+      }
+    } catch (saveError) {
+      setError(saveError.message || "Unable to save visitor.");
     }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="card relative z-10 w-full max-w-2xl p-6 animate-fade-up max-h-[calc(100vh-3rem)] overflow-y-auto">
+      <form onSubmit={handleSubmit} className="card relative z-10 w-full max-w-2xl p-6 animate-fade-up max-h-[calc(100vh-3rem)] overflow-y-auto">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
             <h3 className="font-display text-lg font-semibold text-white">
@@ -138,14 +166,45 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
           </div>
           <div>
             <label className="label">Host Member *</label>
-            <select className="input" value={form.host_member_id} onChange={set("host_member_id")}>
-              <option value="">Select member</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.full_name}
-                </option>
-              ))}
-            </select>
+            <button
+              type="button"
+              className="input text-left"
+              onClick={() => setHostPickerOpen((current) => !current)}
+            >
+              {selectedHost?.full_name || "Select member"}
+            </button>
+            {hostPickerOpen && (
+              <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-2">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    className="input pl-10"
+                    value={hostSearch}
+                    onChange={(event) => setHostSearch(event.target.value)}
+                    placeholder="Search host member..."
+                    autoFocus
+                  />
+                </div>
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-800">
+                  {filteredMembers.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-slate-500">No host members match your search.</p>
+                  ) : filteredMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => {
+                        setForm((current) => ({ ...current, host_member_id: member.id }));
+                        setHostSearch(member.full_name || "");
+                        setHostPickerOpen(false);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                    >
+                      {member.full_name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="label">Visit Date</label>
@@ -188,15 +247,15 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <button onClick={handleSubmit} disabled={saving} className="btn-primary disabled:opacity-50">
+          <button type="submit" disabled={saving} className="btn-primary disabled:opacity-50">
             <Plus className="h-4 w-4" />
             {saving ? "Saving..." : initial?.id ? "Save Visitor" : "Register Visitor"}
           </button>
-          <button onClick={onClose} className="btn-secondary">
+          <button type="button" onClick={onClose} className="btn-secondary">
             Cancel
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -236,6 +295,7 @@ export default function VisitorsPage() {
           email,
           notes,
           visit_date,
+          created_by,
           created_at,
           updated_at,
           host_member:members!visitors_host_member_id_fkey(full_name)
@@ -283,25 +343,128 @@ export default function VisitorsPage() {
       email: form.email.trim() || null,
       notes: form.notes.trim() || null,
       visit_date: form.visit_date || format(new Date(), "yyyy-MM-dd"),
+    };
+    const createPayload = { ...payload, created_by: profile.id };
+    const payloadWithTimestamp = {
+      ...payload,
       updated_at: new Date().toISOString(),
     };
+    const createPayloadWithTimestamp = {
+      ...createPayload,
+      updated_at: payloadWithTimestamp.updated_at,
+    };
 
-    const { error: saveError } = form.id
-      ? await supabase.from("visitors").update(payload).eq("id", form.id)
-      : await supabase.from("visitors").insert({ ...payload, created_by: profile.id });
+    let saveResult;
 
-    setSaving(false);
+    try {
+      saveResult = form.id
+        ? await supabase
+          .from("visitors")
+          .update(payloadWithTimestamp)
+          .eq("id", form.id)
+          .select(`
+            id,
+            full_name,
+            company_name,
+            purpose_of_visit,
+            host_member_id,
+            phone,
+            email,
+            notes,
+            visit_date,
+            created_by,
+            created_at,
+            updated_at,
+            host_member:members!visitors_host_member_id_fkey(full_name)
+          `)
+          .maybeSingle()
+        : await supabase
+          .from("visitors")
+          .insert(createPayloadWithTimestamp)
+          .select(`
+            id,
+            full_name,
+            company_name,
+            purpose_of_visit,
+            host_member_id,
+            phone,
+            email,
+            notes,
+            visit_date,
+            created_by,
+            created_at,
+            updated_at,
+            host_member:members!visitors_host_member_id_fkey(full_name)
+          `)
+          .maybeSingle();
 
-    if (saveError) {
-      const schemaHelp = visitorsSchemaHelp(saveError);
+      if (saveResult.error && isUpdatedAtColumnError(saveResult.error)) {
+        saveResult = form.id
+          ? await supabase
+            .from("visitors")
+            .update(payload)
+            .eq("id", form.id)
+            .select(`
+              id,
+              full_name,
+              company_name,
+              purpose_of_visit,
+              host_member_id,
+              phone,
+              email,
+              notes,
+              visit_date,
+              created_by,
+              created_at,
+              host_member:members!visitors_host_member_id_fkey(full_name)
+            `)
+            .maybeSingle()
+          : await supabase
+            .from("visitors")
+            .insert(createPayload)
+            .select(`
+              id,
+              full_name,
+              company_name,
+              purpose_of_visit,
+              host_member_id,
+              phone,
+              email,
+              notes,
+              visit_date,
+              created_by,
+              created_at,
+              host_member:members!visitors_host_member_id_fkey(full_name)
+            `)
+            .maybeSingle();
+      }
+    } finally {
+      setSaving(false);
+    }
+
+    if (saveResult.error) {
+      const schemaHelp = visitorsSchemaHelp(saveResult.error);
       if (schemaHelp) {
         setSchemaError(schemaHelp);
       } else {
-        setError(saveError.message || "Unable to save visitor.");
+        setError(saveResult.error.message || "Unable to save visitor.");
       }
-      return { error: saveError };
+      return { error: saveResult.error };
     }
 
+    if (!saveResult.data?.id) {
+      const noRowsError = new Error("This visitor could not be saved. Please refresh the visitors page and try again.");
+      setError(noRowsError.message);
+      return { error: noRowsError };
+    }
+
+    setVisitors((current) => {
+      const exists = current.some((visitor) => visitor.id === saveResult.data.id);
+      if (exists) {
+        return current.map((visitor) => visitor.id === saveResult.data.id ? saveResult.data : visitor);
+      }
+      return [saveResult.data, ...current];
+    });
     setShowForm(false);
     setEditingVisitor(null);
     await fetchData();
@@ -348,11 +511,6 @@ export default function VisitorsPage() {
     });
   }, [search, visitors]);
 
-  const todayKey = format(new Date(), "yyyy-MM-dd");
-  const totalCompanies = new Set(visitors.map((visitor) => visitor.company_name).filter(Boolean)).size;
-  const todayVisitors = visitors.filter((visitor) => visitor.visit_date === todayKey).length;
-  const hostedVisitors = visitors.filter((visitor) => visitor.host_member?.full_name).length;
-
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
@@ -395,20 +553,6 @@ export default function VisitorsPage() {
           Add at least one member first so each visitor can be assigned to a host.
         </div>
       )}
-
-      <div className="grid grid-cols-2 gap-4 animate-fade-up lg:grid-cols-4">
-        {[
-          { label: "Total Visitors", value: visitors.length },
-          { label: "Today", value: todayVisitors },
-          { label: "Companies", value: totalCompanies },
-          { label: "Hosted", value: hostedVisitors },
-        ].map(({ label, value }) => (
-          <div key={label} className="card p-4 text-center">
-            <p className="text-xs text-slate-400">{label}</p>
-            <p className="mt-1 font-display text-2xl font-bold text-white">{value}</p>
-          </div>
-        ))}
-      </div>
 
       <div className="relative animate-fade-up">
         <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
