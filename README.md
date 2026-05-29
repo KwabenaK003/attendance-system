@@ -30,7 +30,10 @@ Create a `.env` file in the project root:
 ```
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
+VITE_PUBLIC_APP_URL=https://your-deployed-app.example.com
 ```
+
+`VITE_PUBLIC_APP_URL` is optional, but recommended in production so copied leave request and shared clock links use your deployed URL instead of the current browser origin.
 
 ### 4. Install dependencies and run
 ```bash

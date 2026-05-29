@@ -18,6 +18,7 @@ import { useGeolocation } from "../hooks/useGeolocation";
 import { supabase } from "../lib/supabase";
 import { getDeviceMetadata, getNetworkMetadata, getPublicIpAddress } from "../lib/clockMetadata";
 import { compareFaceReferences, captureVideoFrame, createFaceReference, normalizeFaceReference, waitForVideoReady } from "../lib/faceVerification";
+import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 
 function LiveClock() {
@@ -229,7 +230,10 @@ export default function ClockPage({ standalone = false }) {
   const [stationLinkCopied, setStationLinkCopied] = useState(false);
 
   const people = sortPeople([...staffEmployees, ...members]);
-  const selectedPerson = people.find((person) => buildPersonKey(person) === selectedPersonKey) || null;
+  const selfPerson = buildFallbackEmployee(profile);
+  const selectedPerson = standalone
+    ? people.find((person) => buildPersonKey(person) === selectedPersonKey) || null
+    : selfPerson;
   const isManagementUser = hasManagementAccess(profile?.role);
   const selectedFaceReference = normalizeFaceReference(
     selectedPerson?.face_reference || (selectedPerson?.kind === "staff" && selectedPerson.id === profile?.id ? profile?.face_reference : null)
@@ -250,11 +254,7 @@ export default function ClockPage({ standalone = false }) {
     : [];
   const showSearchResults = Boolean(normalizedQuery)
     && normalizedQuery !== (selectedPerson?.full_name?.trim()?.toLowerCase() || "");
-  const stationUrl = typeof window === "undefined"
-    ? "/clock/station"
-    : new URL("/clock/station", window.location.origin).toString();
-  const stationHost = typeof window === "undefined" ? "" : window.location.hostname;
-  const stationUsesLocalhost = stationHost === "localhost" || stationHost === "127.0.0.1";
+  const stationUrl = buildShareUrl("/clock/station");
 
   useEffect(() => {
     if (!stationLinkCopied) {
@@ -270,12 +270,14 @@ export default function ClockPage({ standalone = false }) {
   }, [profile]);
 
   useEffect(() => {
-    void loadPeople();
-  }, [profile?.id]);
+    if (standalone) {
+      void loadPeople();
+    }
+  }, [profile?.id, standalone]);
 
   useEffect(() => {
     void fetchStatus(selectedPerson);
-  }, [selectedPersonKey, staffEmployees, members]);
+  }, [profile?.id, profile?.face_reference, selectedPersonKey, staffEmployees, members, standalone]);
 
   useEffect(() => {
     return () => {
@@ -620,7 +622,7 @@ export default function ClockPage({ standalone = false }) {
 
   async function copyStationLink() {
     try {
-      await navigator.clipboard.writeText(stationUrl);
+      await copyTextToClipboard(stationUrl);
       setStationLinkCopied(true);
     } catch (error) {
       setMessage({ type: "error", text: error.message || "Unable to copy the shared clock link." });
@@ -632,33 +634,18 @@ export default function ClockPage({ standalone = false }) {
       <div className="animate-fade-up">
         <h2 className="font-display font-bold text-2xl text-white">Time Clock</h2>
         <p className="text-slate-400 text-sm mt-1">
-          Search for an employee or member, select their name, then complete face verification to record the punch with device, IP, network, date, time, and location.
+          {standalone
+            ? "Search for an employee or member, select their name, then complete face verification to record the punch with device, IP, network, date, time, and location."
+            : "Complete face verification to record your own punch with device, IP, network, date, time, and location."}
         </p>
       </div>
 
       {!standalone && isManagementUser && (
         <div className="card p-5 animate-fade-up border-accent/20">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-2xl">
-              <h3 className="font-display font-semibold text-white">Shared Clock Link</h3>
-            </div>
-            <Link to="/clock/station" className="btn-secondary text-sm">
-              Preview Tablet View
-            </Link>
-          </div>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <input className="input flex-1 font-mono text-sm" value={stationUrl} readOnly />
-            <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2 sm:w-auto">
-              <Copy className="w-4 h-4" />
-              {stationLinkCopied ? "Copied" : "Copy Link"}
-            </button>
-          </div>
-          <div className="mt-3 space-y-1 text-xs text-slate-500">
-            <p>Sign in on the device with an admin, executive, or manager account once, then leave this shared clock page open for staff use.</p>
-            {stationUsesLocalhost && (
-              <p>If you are still using `localhost`, replace it with your deployed site URL or your computer&apos;s local network IP before opening the link on another device.</p>
-            )}
-          </div>
+          <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2">
+            <Copy className="w-4 h-4" />
+            {stationLinkCopied ? "Copied" : "Copy Link"}
+          </button>
         </div>
       )}
 
@@ -678,53 +665,55 @@ export default function ClockPage({ standalone = false }) {
           </div>
         </div>
 
-        <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
-          <div>
-            <label className="label">Search Employee or Member</label>
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  className="input pl-10"
-                  value={searchTerm}
-                  onChange={(event) => {
-                    setSearchTerm(event.target.value);
-                    setMessage(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      runPersonSearch();
-                    }
-                  }}
-                  placeholder={peopleLoading ? "Loading people..." : "Search by name, department, or role"}
-                  disabled={peopleLoading || loading || faceBusy}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={runPersonSearch}
-                disabled={peopleLoading || loading || faceBusy}
-                className="btn-secondary flex items-center gap-2"
-              >
-                <Search className="w-4 h-4" />
-                Search
-              </button>
-            </div>
-          </div>
-
-          {showSearchResults && (
-            <div className="space-y-2">
-              {searchResults.length > 0 ? searchResults.map((person) => (
-                <SearchResultButton key={buildPersonKey(person)} person={person} onSelect={handleSelectPerson} />
-              )) : (
-                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
-                  No employee or member found for "{searchTerm.trim()}".
+        {standalone && (
+          <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
+            <div>
+              <label className="label">Search Employee or Member</label>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    value={searchTerm}
+                    onChange={(event) => {
+                      setSearchTerm(event.target.value);
+                      setMessage(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        runPersonSearch();
+                      }
+                    }}
+                    placeholder={peopleLoading ? "Loading people..." : "Search by name, department, or role"}
+                    disabled={peopleLoading || loading || faceBusy}
+                  />
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={runPersonSearch}
+                  disabled={peopleLoading || loading || faceBusy}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  <Search className="w-4 h-4" />
+                  Search
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+
+            {showSearchResults && (
+              <div className="space-y-2">
+                {searchResults.length > 0 ? searchResults.map((person) => (
+                  <SearchResultButton key={buildPersonKey(person)} person={person} onSelect={handleSelectPerson} />
+                )) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
+                    No employee or member found for "{searchTerm.trim()}".
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {geoError && (
           <div className="flex items-center gap-2 text-warn text-sm bg-warn/10 border border-warn/20 rounded-xl px-4 py-2 mb-4">

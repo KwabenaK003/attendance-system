@@ -10,6 +10,7 @@ import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import MembersPage from "./pages/MembersPage";
 import VisitorsPage from "./pages/VisitorsPage";
+import UsersPage from "./pages/UsersPage";
 import { getSafeRedirectPath, withRedirect } from "./lib/authRedirect";
 import { hasManagementAccess } from "./lib/workforce";
 
@@ -48,17 +49,22 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<AuthPageRoute />} />
-      <Route path="/register" element={<AuthPageRoute mode="register" />} />
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-      <Route path="/clock/station" element={<RequireAuth adminOnly withLayout={false}><ClockPage standalone /></RequireAuth>} />
+      <Route path="/clock/station" element={<RequireAuth withLayout={false}><ClockPage standalone /></RequireAuth>} />
       <Route path="/clock" element={<RequireAuth><ClockPage /></RequireAuth>} />
       <Route path="/timesheets" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
+      <Route path="/timesheets/:source/:recordId" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
+      <Route path="/leave/new" element={<RequireAuth withLayout={false}><LeavePage /></RequireAuth>} />
+      <Route path="/leave/admin/new" element={<RequireAuth><LeavePage /></RequireAuth>} />
+      <Route path="/leave/:requestId/edit" element={<RequireAuth><LeavePage /></RequireAuth>} />
       <Route path="/leave" element={<RequireAuth><LeavePage /></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
+      <Route path="/members/new" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/members/:memberId/edit" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/visitors" element={<RequireAuth><VisitorsPage /></RequireAuth>} />
-      <Route path="/users" element={<Navigate to="/members" replace />} />
+      <Route path="/users" element={<RequireAuth adminOnly><UsersPage /></RequireAuth>} />
       <Route path="/employees" element={<Navigate to="/members" replace />} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import FaceCaptureField from "../components/FaceCaptureField";
@@ -37,13 +37,22 @@ function MemberForm({ initial, onSave, onCancel }) {
   const [form, setForm] = useState(initial ? { ...EMPTY_FORM, ...initial } : EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [departmentPickerOpen, setDepartmentPickerOpen] = useState(false);
+  const [departmentSearch, setDepartmentSearch] = useState("");
 
   useEffect(() => {
     setForm(initial ? { ...EMPTY_FORM, ...initial } : EMPTY_FORM);
     setError("");
+    setDepartmentPickerOpen(false);
+    setDepartmentSearch("");
   }, [initial]);
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const filteredDepartments = DEPARTMENT_OPTIONS.filter((department) => {
+    const query = departmentSearch.trim().toLowerCase();
+    if (!query) return true;
+    return department.toLowerCase().includes(query);
+  });
 
   async function handleSave() {
     if (!form.full_name) { setError("Full name is required"); return; }
@@ -122,10 +131,45 @@ function MemberForm({ initial, onSave, onCancel }) {
         </div>
         <div>
           <label className="label">Department</label>
-          <select className="input" value={form.department} onChange={set("department")}>
-            <option value="">Select department</option>
-            {DEPARTMENT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
+          <button
+            type="button"
+            className="input text-left"
+            onClick={() => setDepartmentPickerOpen((current) => !current)}
+          >
+            {form.department || "Select department"}
+          </button>
+          {departmentPickerOpen && (
+            <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-2">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
+                  className="input pl-10"
+                  value={departmentSearch}
+                  onChange={(event) => setDepartmentSearch(event.target.value)}
+                  placeholder="Search department..."
+                  autoFocus
+                />
+              </div>
+              <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-800">
+                {filteredDepartments.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-slate-500">No departments match your search.</p>
+                ) : filteredDepartments.map((department) => (
+                  <button
+                    key={department}
+                    type="button"
+                    onClick={() => {
+                      setForm((current) => ({ ...current, department }));
+                      setDepartmentSearch(department);
+                      setDepartmentPickerOpen(false);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                  >
+                    {department}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <label className="label">Employment Type</label>
@@ -338,16 +382,17 @@ export default function MembersPage() {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const { memberId } = useParams();
+  const location = useLocation();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
   const [showCSV, setShowCSV] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [saveError, setSaveError] = useState("");
   const [activeMenuId, setActiveMenuId] = useState(null);
   const activeMenuRef = useRef(null);
   const editingViaRoute = Boolean(memberId);
+  const creatingViaRoute = location.pathname === "/members/new";
 
   useEffect(() => { fetchMembers(); }, []);
 
@@ -371,7 +416,7 @@ export default function MembersPage() {
     setLoading(false);
   }
 
-  async function saveMember(form, { closeInlineForm = true } = {}) {
+  async function saveMember(form) {
     setSaveError("");
     const faceReference = form.faceEnrollment?.cleared
       ? null
@@ -419,16 +464,21 @@ export default function MembersPage() {
     }
 
     if (error) { setSaveError(error.message); return { error }; }
-    if (closeInlineForm) {
-      setShowForm(false);
-    }
     setActiveMenuId(null);
     await fetchMembers();
     return {};
   }
 
+  async function saveNewMember(form) {
+    const result = await saveMember(form);
+    if (!result.error) {
+      navigate("/members");
+    }
+    return result;
+  }
+
   async function saveEditedMember(form) {
-    const result = await saveMember(form, { closeInlineForm: false });
+    const result = await saveMember(form);
     if (!result.error) {
       navigate("/members");
     }
@@ -465,14 +515,18 @@ export default function MembersPage() {
     ? members.find((member) => String(member.id) === memberId) || null
     : null;
 
-  if (editingViaRoute) {
+  if (editingViaRoute || creatingViaRoute) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <h2 className="font-display font-bold text-2xl text-white">Edit Member</h2>
+            <h2 className="font-display font-bold text-2xl text-white">
+              {creatingViaRoute ? "Add Member" : "Edit Member"}
+            </h2>
             <p className="text-slate-400 text-sm mt-1">
-              Update member details without jumping back to the top of the members list.
+              {creatingViaRoute
+                ? "Register a new staff member with employment, emergency, and Face Clock details."
+                : "Update member details without jumping back to the top of the members list."}
             </p>
           </div>
           <button onClick={() => navigate("/members")} className="btn-secondary text-sm">
@@ -487,7 +541,13 @@ export default function MembersPage() {
           </div>
         )}
 
-        {loading ? (
+        {creatingViaRoute ? (
+          <MemberForm
+            initial={null}
+            onSave={saveNewMember}
+            onCancel={() => navigate("/members")}
+          />
+        ) : loading ? (
           <div className="card p-8 text-center text-slate-500">Loading…</div>
         ) : selectedMember ? (
           <MemberForm
@@ -515,7 +575,7 @@ export default function MembersPage() {
           <button onClick={() => setShowCSV(true)} className="btn-secondary flex items-center gap-2 text-sm">
             <Upload className="w-4 h-4" />Bulk Import CSV
           </button>
-          <button onClick={() => { setShowForm(true); setActiveMenuId(null); }} className="btn-primary text-sm">
+          <button onClick={() => { setActiveMenuId(null); navigate("/members/new"); }} className="btn-primary text-sm">
             <Plus className="w-4 h-4" />Add Member
           </button>
         </div>
@@ -526,30 +586,6 @@ export default function MembersPage() {
           <AlertCircle className="w-4 h-4 flex-shrink-0" />{saveError}
           <button onClick={() => setSaveError("")} className="ml-auto"><X className="w-4 h-4" /></button>
         </div>
-      )}
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
-        {[
-          { label: "Total Members", value: members.length },
-          { label: "Active", value: members.filter(m => m.status === "active").length },
-          { label: "Face Enrolled", value: members.filter(m => m.face_reference || m.face_enrolled).length },
-          { label: "Full Time", value: members.filter(m => m.employment_type === "full_time").length },
-        ].map(({ label, value }) => (
-          <div key={label} className="card p-4 text-center">
-            <p className="text-slate-400 text-xs">{label}</p>
-            <p className="font-display font-bold text-2xl text-white mt-1">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Form */}
-      {showForm && (
-        <MemberForm
-          initial={null}
-          onSave={saveMember}
-          onCancel={() => { setShowForm(false); }}
-        />
       )}
 
       {/* Search */}
@@ -619,7 +655,6 @@ export default function MembersPage() {
                             <button
                               onClick={() => {
                                 setActiveMenuId(null);
-                                setShowForm(false);
                                 navigate(`/members/${m.id}/edit`);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-200 hover:bg-slate-800 transition-colors"

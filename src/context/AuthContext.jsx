@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { assertSupabaseConfigured, SUPABASE_CONFIG_ERROR, supabase } from "../lib/supabase";
 
 const AuthContext = createContext(null);
+const DEFAULT_SIGNED_IN_ROLE = "admin";
 
 function isMissingProfileColumnError(error) {
   return /(company_name|face_reference)/i.test(error?.message || "");
@@ -18,7 +19,7 @@ function buildResolvedProfile(authUser, currentProfile = null) {
     ...currentProfile,
     id: currentProfile?.id ?? authUser?.id ?? null,
     full_name: currentProfile?.full_name || getFallbackFullName(authUser),
-    role: currentProfile?.role ?? authUser?.user_metadata?.role ?? "employee",
+    role: DEFAULT_SIGNED_IN_ROLE,
     department: currentProfile?.department ?? authUser?.user_metadata?.department ?? "",
     company_name: currentProfile?.company_name ?? authUser?.user_metadata?.company_name ?? "",
     face_reference: currentProfile?.face_reference ?? authUser?.user_metadata?.face_reference ?? null,
@@ -90,7 +91,7 @@ export function AuthProvider({ children }) {
     const profileSeed = {
       id: authUser.id,
       full_name: authUser.user_metadata?.full_name || authUser.email?.split("@")[0] || "",
-      role: authUser.user_metadata?.role || "employee",
+      role: DEFAULT_SIGNED_IN_ROLE,
       department: authUser.user_metadata?.department || "",
       company_name: authUser.user_metadata?.company_name || "",
       face_reference: authUser.user_metadata?.face_reference || null,
@@ -125,20 +126,30 @@ export function AuthProvider({ children }) {
     return resolvedProfile;
   }
 
-  async function signIn(email, password, expectedRole = null) {
+  async function signIn(email, password) {
     assertSupabaseConfigured();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data?.user || !expectedRole) return { data, error };
+    if (error || !data?.user) return { data, error };
 
     try {
       const resolvedProfile = await fetchProfile(data.user.id, data.user);
-      if (resolvedProfile?.role !== expectedRole) {
-        await supabase.auth.signOut();
-        return {
-          data,
-          error: new Error(`This account is registered as ${resolvedProfile?.role || "employee"}. Please select the matching role.`),
-        };
+      if (resolvedProfile?.id) {
+        await supabase
+          .from("profiles")
+          .update({ role: DEFAULT_SIGNED_IN_ROLE })
+          .eq("id", resolvedProfile.id);
       }
+
+      const { data: updatedAuth } = await supabase.auth.updateUser({
+        data: {
+          ...data.user.user_metadata,
+          role: DEFAULT_SIGNED_IN_ROLE,
+        },
+      });
+      const updatedUser = updatedAuth?.user || data.user;
+      setUser(updatedUser);
+      setProfile(buildResolvedProfile(updatedUser, { ...resolvedProfile, role: DEFAULT_SIGNED_IN_ROLE }));
+      return { data: { ...data, user: updatedUser }, error: null };
     } catch (profileError) {
       await supabase.auth.signOut();
       return { data, error: profileError };
@@ -199,7 +210,7 @@ export function AuthProvider({ children }) {
       id: user.id,
       full_name: typeof updates.full_name === "string" ? updates.full_name : nextProfile?.full_name || getFallbackFullName(user),
       department: typeof updates.department === "string" ? updates.department : nextProfile?.department || "",
-      role: typeof updates.role === "string" ? updates.role : nextProfile?.role || "employee",
+      role: typeof updates.role === "string" ? updates.role : nextProfile?.role || DEFAULT_SIGNED_IN_ROLE,
       company_name: typeof updates.company_name === "string" ? updates.company_name : nextProfile?.company_name || "",
       face_reference: updates.face_reference !== undefined ? updates.face_reference : nextProfile?.face_reference || null,
       hourly_rate: typeof updates.hourly_rate === "number" ? updates.hourly_rate : Number(nextProfile?.hourly_rate || 0),

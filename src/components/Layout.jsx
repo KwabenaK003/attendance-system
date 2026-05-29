@@ -9,18 +9,19 @@ import { buildMemberActivity, sortTimeActivity } from "../lib/timeRecords";
 import {
   Clock, LayoutDashboard, Users, FileText,
   Calendar, BarChart2, Settings, LogOut, Menu, X, ChevronRight,
-  Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList
+  Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList, UserPlus
 } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/clock", icon: Clock, label: "Time Clock" },
-  { to: "/timesheets", icon: FileText, label: "Timesheets" },
+  { to: "/timesheets", icon: FileText, label: "Attendance Log" },
   { to: "/leave", icon: Calendar, label: "Leave Requests" },
   { to: "/reports", icon: BarChart2, label: "Reports" },
   { to: "/members", icon: Users, label: "Members" },
   { to: "/visitors", icon: UserRound, label: "Visitors" },
   { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/users", icon: UserPlus, label: "Users" },
 ];
 
 function NotificationRow({ icon: Icon, title, body, tone = "default" }) {

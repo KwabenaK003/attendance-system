@@ -34,7 +34,7 @@ function extractNoteValue(note, label) {
   return value || null;
 }
 
-function buildCaptureDetails(record, {
+export function buildCaptureDetails(record, {
   timestamp,
   locationName,
   preferNoteLocation = true,
@@ -85,6 +85,8 @@ export function buildPunchSessions(punches = [], { now = new Date(), getPersonNa
 
     sessions.push({
       id: lastIn.id || `${personId}-${punch.id}`,
+      punchInId: lastIn.id || null,
+      punchOutId: punch.id || null,
       source: "employee",
       personId,
       personType: "Employee",
@@ -117,6 +119,8 @@ export function buildPunchSessions(punches = [], { now = new Date(), getPersonNa
 
     sessions.push({
       id: punch.id || `${personId}-active`,
+      punchInId: punch.id || null,
+      punchOutId: null,
       source: "employee",
       personId,
       personType: "Employee",
@@ -151,6 +155,7 @@ export function buildMemberSessions(entries = [], { now = new Date() } = {}) {
 
       return {
         id: entry.id || `${entry.member_id || "member"}-${entry.punch_in}`,
+        entryId: entry.id || null,
         source: "member",
         personId: entry.member_id || null,
         personType: "Member",

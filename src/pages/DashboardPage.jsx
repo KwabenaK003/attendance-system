@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  addMinutes,
   endOfWeek,
   format,
   parseISO,
@@ -11,7 +10,6 @@ import {
 import {
   Calendar,
   Clock,
-  TrendingUp,
   UserCheck,
   UserRound,
   Users,
@@ -19,6 +17,8 @@ import {
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Pie,
@@ -36,6 +36,7 @@ import { buildMemberActivity, buildPunchActivity, buildPunchSessions, sortTimeAc
 import { hasManagementAccess } from "../lib/workforce";
 
 const PIE_COLORS = ["#28c7d9", "#fbbf24", "#ff4d6d"];
+const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
 
 function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
   const colors = {
@@ -103,6 +104,17 @@ function formatClockTime(value) {
   }
 }
 
+function isMissingVisitorsTable(error) {
+  const message = error?.message || "";
+  return /visitors/i.test(message) && /(does not exist|not found|relation)/i.test(message);
+}
+
+function getLeaveMemberId(reason = "") {
+  const line = String(reason || "").split("\n").find((entry) => entry.startsWith(LEAVE_MEMBER_MARKER));
+  if (!line) return "";
+  return line.slice(LEAVE_MEMBER_MARKER.length).split("|")[0] || "";
+}
+
 function parseTimeToDate(referenceDate, value) {
   if (!value || typeof value !== "string" || !value.includes(":")) {
     return referenceDate;
@@ -114,16 +126,11 @@ function parseTimeToDate(referenceDate, value) {
   return date;
 }
 
-function isMissingVisitorsTable(error) {
-  const message = error?.message || "";
-  return /visitors/i.test(message) && /(does not exist|not found|relation)/i.test(message);
-}
-
-function buildStatusBreakdown(members = [], todayMemberEntries = [], attendanceSettings, now = new Date()) {
+function buildTodaySummary(members = [], todayMemberEntries = [], attendanceSettings, now = new Date()) {
   const checkInStart = parseTimeToDate(now, attendanceSettings?.officialCheckInTime || "09:00");
-  const lateCutoff = addMinutes(checkInStart, Number(attendanceSettings?.lateThresholdMinutes || 0));
+  const lateCutoff = new Date(checkInStart);
+  lateCutoff.setMinutes(lateCutoff.getMinutes() + Number(attendanceSettings?.lateThresholdMinutes || 0));
   const firstEntryByMember = new Map();
-
   for (const entry of todayMemberEntries) {
     if (!entry?.member_id || !entry?.punch_in) {
       continue;
@@ -135,35 +142,39 @@ function buildStatusBreakdown(members = [], todayMemberEntries = [], attendanceS
     }
   }
 
-  let late = 0;
-  let onTime = 0;
-
-  for (const entry of firstEntryByMember.values()) {
-    const punchIn = parseISO(entry.punch_in);
-    if (punchIn > lateCutoff) {
-      late += 1;
-    } else {
-      onTime += 1;
-    }
-  }
-
-  const presentToday = firstEntryByMember.size;
-  const absent = Math.max(members.length - presentToday, 0);
+  const late = Array.from(firstEntryByMember.values()).filter((entry) => parseISO(entry.punch_in) > lateCutoff).length;
 
   return {
-    presentToday,
+    presentToday: firstEntryByMember.size,
     late,
-    pieData: [
-      { name: "On Time", value: onTime, fill: PIE_COLORS[0] },
-      { name: "Late", value: late, fill: PIE_COLORS[1] },
-      { name: "Absent", value: absent, fill: PIE_COLORS[2] },
-    ].filter((slice) => slice.value > 0),
   };
 }
 
+function buildGenderDistribution(members = []) {
+  const counts = { Male: 0, Female: 0, Unspecified: 0 };
+
+  for (const member of members) {
+    const gender = String(member.gender || "").trim().toLowerCase();
+    if (gender === "male") {
+      counts.Male += 1;
+    } else if (gender === "female") {
+      counts.Female += 1;
+    } else {
+      counts.Unspecified += 1;
+    }
+  }
+
+  return [
+    { name: "Male", value: counts.Male, fill: PIE_COLORS[0] },
+    { name: "Female", value: counts.Female, fill: PIE_COLORS[2] },
+    { name: "Unspecified", value: counts.Unspecified, fill: PIE_COLORS[1] },
+  ].filter((slice) => slice.value > 0);
+}
+
 export default function DashboardPage() {
-  const { profile, firstName } = useAuth();
+  const { profile } = useAuth();
   const [weeklyData, setWeeklyData] = useState([]);
+  const [memberStatusData, setMemberStatusData] = useState([]);
   const [stats, setStats] = useState({
     todayHours: "0.0",
     weekHours: "0.0",
@@ -229,6 +240,7 @@ export default function DashboardPage() {
       recentMemberEntriesResult,
       recentPunchesResult,
       visitorsResult,
+      leaveRequestsResult,
     ] = await Promise.all([
       loadSystemSettings(),
       supabase
@@ -241,7 +253,7 @@ export default function DashboardPage() {
         ? supabase.from("profiles").select("id, full_name").order("full_name", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       isAdmin
-        ? supabase.from("members").select("id, full_name").order("full_name", { ascending: true })
+        ? supabase.from("members").select("id, full_name, gender").order("full_name", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       isAdmin
         ? supabase
@@ -274,6 +286,14 @@ export default function DashboardPage() {
           .from("visitors")
           .select("id, visit_date")
           .eq("visit_date", format(todayStart, "yyyy-MM-dd"))
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("leave_requests")
+          .select("id, reason, start_date, end_date, status")
+          .eq("status", "approved")
+          .lte("start_date", format(now, "yyyy-MM-dd"))
+          .gte("end_date", format(now, "yyyy-MM-dd"))
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -316,7 +336,7 @@ export default function DashboardPage() {
       const recentMemberEntries = recentMemberEntriesResult.data || [];
       const recentPunches = recentPunchesResult.data || [];
       const profileNameById = new Map((profilesResult.data || []).map((entry) => [entry.id, entry.full_name]));
-      const statusSummary = buildStatusBreakdown(members, todayMemberEntries, attendanceSettings, now);
+      const statusSummary = buildTodaySummary(members, todayMemberEntries, attendanceSettings, now);
 
       if (profilesResult.error) {
         setDashboardError(profilesResult.error.message || "Unable to load dashboard profiles.");
@@ -330,13 +350,21 @@ export default function DashboardPage() {
         setDashboardError(recentPunchesResult.error.message || "Unable to load recent employee punches.");
       } else if (visitorsResult.error && !isMissingVisitorsTable(visitorsResult.error)) {
         setDashboardError(visitorsResult.error.message || "Unable to load visitors.");
+      } else if (leaveRequestsResult.error) {
+        setDashboardError(leaveRequestsResult.error.message || "Unable to load member leave status.");
       }
 
       const visitorsCount = isMissingVisitorsTable(visitorsResult.error)
         ? 0
         : (visitorsResult.data || []).length;
 
-      setStatusBreakdown(statusSummary.pieData);
+      const inactiveMemberIds = new Set((leaveRequestsResult.data || []).map((request) => getLeaveMemberId(request.reason)).filter(Boolean));
+      const inactiveCount = members.filter((member) => inactiveMemberIds.has(member.id)).length;
+      setMemberStatusData([
+        { name: "Active", value: Math.max(members.length - inactiveCount, 0), fill: "#28c7d9" },
+        { name: "Inactive", value: inactiveCount, fill: "#ff4d6d" },
+      ]);
+      setStatusBreakdown(buildGenderDistribution(members));
       setRecentClockRows(
         sortTimeActivity([
           ...buildPunchActivity(recentPunches, {
@@ -360,6 +388,7 @@ export default function DashboardPage() {
       }
 
       setStatusBreakdown([]);
+      setMemberStatusData([]);
       setRecentClockRows(sortTimeActivity(buildPunchActivity(recentPunchesResult.data || [])).slice(0, 10));
       setStats({
         todayHours: todayHours.toFixed(1),
@@ -378,8 +407,8 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="animate-fade-up">
-        <h2 className="font-display text-2xl font-bold text-white">Welcome, {firstName}</h2>
-        <p className="mt-1 text-sm text-slate-400">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+        <h2 className="font-display text-2xl font-bold text-white">Attendance Overview</h2>
+        <p className="mt-1 text-sm text-slate-400">Welcome back. Here is a summary of the attendance overview</p>
       </div>
 
       {stats.isClockedIn && (
@@ -398,78 +427,98 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className={`grid gap-4 ${isAdmin ? "grid-cols-2 xl:grid-cols-3" : "grid-cols-2"}`}>
-        <StatCard icon={Clock} label="Today's Hours" value={`${stats.todayHours}h`} sub="Logged today" color="accent" />
-        <StatCard icon={TrendingUp} label="This Week" value={`${stats.weekHours}h`} sub="Mon - Sun" color="blue" />
-        {isAdmin && (
-          <>
-            <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="blue" />
-            <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="accent" />
-            <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="yellow" />
-            <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="red" />
-          </>
-        )}
-      </div>
+      {isAdmin && (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="blue" />
+          <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="accent" />
+          <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="yellow" />
+          <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="red" />
+        </div>
+      )}
 
-      <div className={`grid gap-4 ${isAdmin ? "lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]" : "grid-cols-1"}`}>
-        <div className="card p-5">
+      <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
+        <div className="card flex h-full min-h-[320px] flex-col p-5">
           <h3 className="mb-4 font-display text-white text-lg font-semibold">This Week&apos;s Hours</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#28c7d9" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#28c7d9" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-              <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-              <Tooltip content={<HoursTooltip />} />
-              <Area
-                type="monotone"
-                dataKey="hours"
-                stroke="#28c7d9"
-                strokeWidth={2}
-                fill="url(#hoursGrad)"
-                dot={{ fill: "#28c7d9", strokeWidth: 0, r: 3 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div className="h-[220px] flex-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#28c7d9" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#28c7d9" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<HoursTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="hours"
+                  stroke="#28c7d9"
+                  strokeWidth={2}
+                  fill="url(#hoursGrad)"
+                  dot={{ fill: "#28c7d9", strokeWidth: 0, r: 3 }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {isAdmin && (
-          <div className="card p-5">
+          <div className="card flex h-full min-h-[320px] flex-col p-5">
+            <h3 className="mb-4 font-display text-white text-lg font-semibold">Active vs Inactive Members</h3>
+            <div className="h-[220px] flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={memberStatusData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<StatusTooltip />} />
+                  <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                    {memberStatusData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="card flex h-full min-h-[320px] flex-col p-5">
             <div className="mb-4">
-              <h3 className="font-display text-lg font-semibold text-white">Status Breakdown</h3>
-              <p className="mt-1 text-sm text-slate-400">Today&apos;s member attendance split by on-time, late, and absent.</p>
+              <h3 className="font-display text-lg font-semibold text-white">Gender Distribution</h3>
             </div>
 
             {loading ? (
               <div className="flex h-[220px] items-center justify-center text-slate-500">Loading...</div>
             ) : statusBreakdown.length === 0 ? (
-              <div className="flex h-[220px] items-center justify-center text-slate-500">No attendance status data yet.</div>
+              <div className="flex h-[220px] items-center justify-center text-slate-500">No gender data yet.</div>
             ) : (
               <>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={statusBreakdown}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={52}
-                      outerRadius={82}
-                      paddingAngle={3}
-                    >
-                      {statusBreakdown.map((entry, index) => (
-                        <Cell key={entry.name} fill={entry.fill || PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={<StatusTooltip />} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="h-[220px] flex-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={statusBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={34}
+                        outerRadius={54}
+                        paddingAngle={3}
+                      >
+                        {statusBreakdown.map((entry, index) => (
+                          <Cell key={entry.name} fill={entry.fill || PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<StatusTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <div className="mt-4 grid gap-2 grid-cols-3">
                   {statusBreakdown.map((slice) => (
                     <div key={slice.name} className="rounded-2xl border border-slate-800 bg-slate-950/35 px-3 py-3">
                       <div className="flex items-center gap-2">
