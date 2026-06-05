@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { differenceInMinutes, differenceInSeconds, format, parseISO } from "date-fns";
 import {
-  Clock,
   Copy,
   CheckCircle,
   XCircle,
@@ -21,6 +20,27 @@ import { compareFaceReferences, captureVideoFrame, createFaceReference, normaliz
 import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 
+type ClockMessage = {
+  type: "success" | "error";
+  text: string;
+};
+
+type ClockPageProps = {
+  standalone?: boolean;
+};
+
+type ClockUserProfile = {
+  id?: string | null;
+  full_name?: string | null;
+  role?: string | null;
+  department?: string | null;
+  face_reference?: unknown;
+};
+
+type PersonType = LooseRow & {
+  kind?: "staff" | "member";
+};
+
 function LiveClock() {
   const [time, setTime] = useState(new Date());
 
@@ -31,15 +51,15 @@ function LiveClock() {
 
   return (
     <div className="text-center">
-      <p className="font-mono font-bold text-6xl text-white tracking-tight tabular-nums">
+      <p className="font-mono text-5xl font-semibold tracking-tight text-white tabular-nums sm:text-6xl">
         {format(time, "HH:mm:ss")}
       </p>
-      <p className="text-slate-400 mt-2 font-body">{format(time, "EEEE, MMMM d, yyyy")}</p>
+      <p className="mt-2 text-sm font-medium text-slate-500">{format(time, "EEEE, MMMM d, yyyy")}</p>
     </div>
   );
 }
 
-function ElapsedTimer({ since }) {
+function ElapsedTimer({ since }: { since: string }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -58,7 +78,7 @@ function ElapsedTimer({ since }) {
   );
 }
 
-function buildFallbackEmployee(profile) {
+function buildFallbackEmployee(profile: LooseRow | ClockUserProfile | null | undefined): PersonType | null {
   if (!profile?.id) {
     return null;
   }
@@ -73,14 +93,14 @@ function buildFallbackEmployee(profile) {
   };
 }
 
-function normalizeStaffMember(employee) {
+function normalizeStaffMember(employee: LooseRow): PersonType {
   return {
     ...employee,
     kind: "staff",
   };
 }
 
-function normalizeMember(member) {
+function normalizeMember(member: LooseRow): PersonType {
   return {
     ...member,
     kind: "member",
@@ -88,15 +108,15 @@ function normalizeMember(member) {
   };
 }
 
-function buildPersonKey(person) {
+function buildPersonKey(person: PersonType | null | undefined): string {
   return person?.id ? `${person.kind}:${person.id}` : "";
 }
 
-function getPersonTypeLabel(person) {
+function getPersonTypeLabel(person?: PersonType): string {
   return person?.kind === "member" ? "Member" : "Employee";
 }
 
-function sortPeople(people) {
+function sortPeople(people: PersonType[]): PersonType[] {
   return [...people].sort((left, right) => {
     const leftName = left.full_name?.trim()?.toLowerCase() || "";
     const rightName = right.full_name?.trim()?.toLowerCase() || "";
@@ -104,8 +124,8 @@ function sortPeople(people) {
   });
 }
 
-function mergeEmployees(employees, currentProfile) {
-  const merged = new Map();
+function mergeEmployees(employees: LooseRow[], currentProfile?: LooseRow | ClockUserProfile | null): PersonType[] {
+  const merged = new Map<string, PersonType>();
 
   for (const employee of employees || []) {
     if (employee?.id) {
@@ -124,7 +144,21 @@ function mergeEmployees(employees, currentProfile) {
   return sortPeople(Array.from(merged.values()));
 }
 
-function buildPunchNote({ person, similarity, locationName, deviceName, networkName, ipAddress }) {
+function buildPunchNote({
+  person,
+  similarity,
+  locationName,
+  deviceName,
+  networkName,
+  ipAddress,
+}: {
+  person: PersonType;
+  similarity?: number;
+  locationName?: string | null;
+  deviceName?: string | null;
+  networkName?: string | null;
+  ipAddress?: string | null;
+}) {
   const parts = [
     "Method: Face Clock",
     `${getPersonTypeLabel(person)}: ${person.full_name || "Unknown"}`,
@@ -157,7 +191,7 @@ function buildPunchNote({ person, similarity, locationName, deviceName, networkN
   return parts.join(" | ");
 }
 
-async function insertPunchRecord(payload) {
+async function insertPunchRecord(payload: Record<string, unknown>) {
   const insertAttempt = await supabase.from("punches").insert(payload);
   if (!insertAttempt.error) {
     return { usedFallbackColumns: false };
@@ -182,15 +216,15 @@ async function insertPunchRecord(payload) {
   return { usedFallbackColumns: true };
 }
 
-function SearchResultButton({ person, onSelect }) {
+function SearchResultButton({ person, onSelect }: { person: PersonType; onSelect: (person: PersonType) => void }) {
   return (
     <button
       type="button"
       onClick={() => onSelect(person)}
-      className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-slate-900"
+      className="w-full rounded-xl border border-slate-800 bg-slate-900/75 px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-slate-900"
     >
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+        <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
           <UserRound className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">
@@ -210,23 +244,23 @@ function SearchResultButton({ person, onSelect }) {
   );
 }
 
-export default function ClockPage({ standalone = false }) {
+export default function ClockPage({ standalone = false }: ClockPageProps) {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const [staffEmployees, setStaffEmployees] = useState<LooseRow[]>([]);
-  const [members, setMembers] = useState<LooseRow[]>([]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [staffEmployees, setStaffEmployees] = useState<PersonType[]>([]);
+  const [members, setMembers] = useState<PersonType[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPersonKey, setSelectedPersonKey] = useState("");
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<LooseRow | null>(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [message, setMessage] = useState<ClockMessage | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [faceBusy, setFaceBusy] = useState(false);
-  const [facePreview, setFacePreview] = useState(null);
+  const [facePreview, setFacePreview] = useState<string | null>(null);
   const [stationLinkCopied, setStationLinkCopied] = useState(false);
 
   const people = sortPeople([...staffEmployees, ...members]);
@@ -335,8 +369,8 @@ export default function ClockPage({ standalone = false }) {
       ]);
 
       let nextStaffEmployees = mergeEmployees([], profile);
-      let nextMembers = [];
-      const errors = [];
+      let nextMembers: PersonType[] = [];
+      const errors: string[] = [];
 
       if (staffResult.status === "fulfilled") {
         if (staffResult.value.error) {
@@ -377,7 +411,7 @@ export default function ClockPage({ standalone = false }) {
     }
   }
 
-  async function fetchStatus(person) {
+  async function fetchStatus(person: PersonType | null) {
     if (!person?.id) {
       setStatus(null);
       return;
@@ -431,7 +465,7 @@ export default function ClockPage({ standalone = false }) {
     setMessage(searchResults.length ? null : { type: "error", text: `No employee or member found for "${searchTerm.trim()}".` });
   }
 
-  function handleSelectPerson(person) {
+  function handleSelectPerson(person: PersonType) {
     setSelectedPersonKey(buildPersonKey(person));
     setSearchTerm(person.full_name || "");
     setFacePreview(null);
@@ -472,7 +506,7 @@ export default function ClockPage({ standalone = false }) {
     setCameraReady(false);
   }
 
-  async function recordPunch({ person, similarity }) {
+  async function recordPunch({ person, similarity }: { person: PersonType; similarity?: number }) {
     if (!person?.id) {
       setMessage({ type: "error", text: "Select a person before clocking." });
       return;
@@ -504,7 +538,8 @@ export default function ClockPage({ standalone = false }) {
       if (person.kind === "member") {
         if (status?.id) {
           const now = new Date();
-          const hours = differenceInMinutes(now, parseISO(status.punch_in)) / 60;
+          const punchIn = typeof status.punch_in === "string" ? status.punch_in : now.toISOString();
+          const hours = differenceInMinutes(now, parseISO(punchIn)) / 60;
           const { error } = await supabase.from("member_entries").update({
             punch_out: now.toISOString(),
             hours: parseFloat(hours.toFixed(2)),
@@ -598,6 +633,9 @@ export default function ClockPage({ standalone = false }) {
     setMessage(null);
 
     try {
+      if (!videoRef.current) {
+        throw new Error("Camera is not available for face capture.");
+      }
       const photo = captureVideoFrame(videoRef.current);
       const liveReference = await createFaceReference(photo);
       const comparison = compareFaceReferences(selectedFaceReference, liveReference);
@@ -631,46 +669,27 @@ export default function ClockPage({ standalone = false }) {
   }
 
   return (
-    <div className={`mx-auto space-y-6 ${standalone ? "max-w-5xl px-4 py-6 sm:px-6" : "max-w-4xl"}`}>
-      <div className="animate-fade-up">
-        <h2 className="font-display font-bold text-2xl text-white">Time Clock</h2>
-        <p className="text-slate-400 text-sm mt-1">
-          {standalone
-            ? "Search for an employee or member, select their name, then complete face verification to record the punch with device, IP, network, date, time, and location."
-            : "Complete face verification to record your own punch with device, IP, network, date, time, and location."}
-        </p>
+    <div className={`mx-auto space-y-6 ${standalone ? "max-w-6xl px-4 py-6 sm:px-6" : "max-w-6xl"}`}>
+      <div className="card animate-fade-up p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <h2 className="font-display text-3xl font-semibold text-white">Time Clock</h2>
+          {!standalone && isManagementUser && (
+            <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2">
+              <Copy className="w-4 h-4" />
+              {stationLinkCopied ? "Copied" : "Copy Link"}
+            </button>
+          )}
+        </div>
       </div>
 
-      {!standalone && isManagementUser && (
-        <div className="card p-5 animate-fade-up border-accent/20">
-          <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2">
-            <Copy className="w-4 h-4" />
-            {stationLinkCopied ? "Copied" : "Copy Link"}
-          </button>
-        </div>
-      )}
-
-      <div className="card p-8 text-center animate-fade-up">
-        <LiveClock />
-
-        <div className="flex justify-center mt-8 mb-6">
-          <div className={`relative w-32 h-32 rounded-full flex items-center justify-center ${
-            isClockedIn
-              ? "bg-accent/10 border-2 border-accent clock-ring"
-              : "bg-slate-800 border-2 border-slate-700"
-          }`}>
-            <Clock className={`w-10 h-10 ${isClockedIn ? "text-accent" : "text-slate-500"}`} />
-            {isClockedIn && (
-              <div className="absolute -inset-1 rounded-full border border-accent/20 animate-ping" />
-            )}
-          </div>
-        </div>
+      <div className="grid gap-6">
+        <section className="card animate-fade-up p-5 sm:p-6">
 
         {standalone && (
-          <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
+          <div className="mb-6 space-y-4 text-left">
             <div>
               <label className="label">Search Employee or Member</label>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
                   <input
@@ -707,7 +726,7 @@ export default function ClockPage({ standalone = false }) {
                 {searchResults.length > 0 ? searchResults.map((person) => (
                   <SearchResultButton key={buildPersonKey(person)} person={person} onSelect={handleSelectPerson} />
                 )) : (
-                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
                     No employee or member found for "{searchTerm.trim()}".
                   </div>
                 )}
@@ -737,31 +756,41 @@ export default function ClockPage({ standalone = false }) {
           </div>
         )}
 
+        <div className="mb-6 text-center">
+          <LiveClock />
+        </div>
+
         {selectedPerson ? (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-4 max-w-xl mx-auto text-left">
-              <div className="flex items-center gap-3 text-white flex-wrap">
-                <UserRound className="w-4 h-4 text-accent" />
-                <span className="font-medium">{selectedPerson.full_name || "Unknown person"}</span>
-                <span className={`badge text-[10px] uppercase tracking-wide ${selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
-                  {getPersonTypeLabel(selectedPerson)}
-                </span>
-                <span className="badge-blue badge text-[10px] uppercase tracking-wide">{getRoleLabel(selectedPerson.role)}</span>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/45 px-4 py-4 text-left">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3 text-white">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+                    <UserRound className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{selectedPerson.full_name || "Unknown person"}</p>
+                    <p className="mt-1 text-xs text-slate-500">Face verification uses the selected enrollment.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`badge text-[10px] uppercase tracking-wide ${selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
+                    {getPersonTypeLabel(selectedPerson)}
+                  </span>
+                  <span className="badge-blue badge text-[10px] uppercase tracking-wide">{getRoleLabel(selectedPerson.role)}</span>
+                </div>
               </div>
-              <p className="text-slate-500 text-xs mt-2">
-                Face verification will be checked against the selected person's enrolled face reference.
-              </p>
             </div>
 
             {isClockedIn ? (
-              <div className="mb-2">
+              <div className="rounded-xl border border-accent/20 bg-accent/10 px-4 py-3">
                 <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
                 <p className="text-slate-300 text-sm">
-                  {selectedPerson.full_name || "Selected person"} has been clocked in for {selectedPerson.kind === "member" ? <ElapsedTimer since={status.punch_in} /> : <ElapsedTimer since={status.timestamp} />}
+                  {selectedPerson.full_name || "Selected person"} has been clocked in for {selectedPerson.kind === "member" ? <ElapsedTimer since={String(status?.punch_in ?? status?.timestamp ?? new Date().toISOString())} /> : <ElapsedTimer since={String(status?.timestamp ?? status?.punch_in ?? new Date().toISOString())} />}
                 </p>
               </div>
             ) : (
-              <div className="mb-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/35 px-4 py-3">
                 <div className="badge-red mx-auto w-fit mb-2">NOT CLOCKED IN</div>
                 <p className="text-slate-500 text-sm">
                   Start face verification to clock {selectedPerson.full_name || "this person"} in or out.
@@ -770,7 +799,7 @@ export default function ClockPage({ standalone = false }) {
             )}
 
             {!selectedFaceReference && (
-              <div className="card p-4 text-left bg-warn/10 border-warn/20 max-w-xl mx-auto">
+              <div className="card mx-auto max-w-xl border-warn/20 bg-warn/10 p-4 text-left">
                 <p className="text-warn text-sm">
                   {selectedPerson.kind === "staff" && selectedPerson.id === profile?.id ? (
                     <>
@@ -787,7 +816,7 @@ export default function ClockPage({ standalone = false }) {
               </div>
             )}
 
-            <div className="rounded-[28px] overflow-hidden border border-slate-700 bg-slate-900/80 max-w-sm mx-auto aspect-square">
+            <div className="mx-auto aspect-square max-w-sm overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 shadow-soft">
               {cameraOpen ? (
                 <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
               ) : facePreview ? (
@@ -800,7 +829,7 @@ export default function ClockPage({ standalone = false }) {
               )}
             </div>
 
-            <p className="text-slate-500 text-sm max-w-xl mx-auto">
+            <p className="mx-auto max-w-xl text-sm leading-6 text-slate-500">
               Once the face matches, the system captures the user's device, IP address, network used, date, time, and location immediately.
             </p>
 
@@ -809,7 +838,7 @@ export default function ClockPage({ standalone = false }) {
                 type="button"
                 onClick={handleFacePunch}
                 disabled={loading || geoLoading || faceBusy || !selectedFaceReference}
-                className={`py-4 px-6 rounded-2xl font-display font-bold text-lg transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 ${
+                className={`flex items-center justify-center gap-3 rounded-xl px-6 py-3 font-display text-base font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 ${
                   isClockedIn
                     ? "bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20"
                     : "btn-primary"
@@ -829,10 +858,11 @@ export default function ClockPage({ standalone = false }) {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 max-w-xl mx-auto px-6 py-8 text-slate-500">
+          <div className="mx-auto max-w-xl rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-6 py-8 text-slate-500">
             Search for an employee or member name above, then select the correct result to open the face clock.
           </div>
         )}
+        </section>
       </div>
     </div>
   );

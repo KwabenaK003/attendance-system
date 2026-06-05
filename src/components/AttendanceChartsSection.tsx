@@ -66,7 +66,7 @@ function AttendanceChartCard({ title, data, loading }: AttendanceChartCardProps)
               }
             />
             <Legend formatter={(value: string | number) => <span className="text-slate-400 text-xs">{value}</span>} />
-            <Bar dataKey="attendees" name="Attendees" fill="#00e5be" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="attendees" name="Attendees" fill="#3b82f6" radius={[6, 6, 0, 0]} />
             <Bar dataKey="absentees" name="Absentees" fill="#ff4d6d" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, startOfYear, endOfYear, eachDayOfInterval, isSameMonth, isSameDay, getDaysInMonth } from "date-fns";
 import {
   ArrowLeft,
   CalendarDays,
@@ -41,6 +41,136 @@ function hasCapturedDetails(details) {
 
 function getCapturedDetailValue(details, key) {
   return details?.[key] || "";
+}
+
+function MonthYearCalendar({ selectedDate, onDateSelect, onClose }) {
+  const [displayMonth, setDisplayMonth] = useState(selectedDate);
+  const firstDay = startOfMonth(displayMonth);
+  const lastDay = endOfMonth(displayMonth);
+  const daysInMonth = getDaysInMonth(displayMonth);
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - firstDay.getDay());
+  
+  const calendarDays = [];
+  for (let i = 0; i < 42; i++) {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + i);
+    calendarDays.push(date);
+  }
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 z-[9998] bg-black/60 transition-opacity"
+        onClick={onClose}
+      />
+      
+      {/* Modal */}
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
+        <div className="pointer-events-auto rounded-2xl border border-slate-700 bg-slate-950 p-8 shadow-2xl shadow-black/80 w-96">
+          {/* Close Button */}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-white">Select Month & Year</h3>
+            <button
+              onClick={onClose}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Month/Year Navigation */}
+          <div className="mb-6 flex items-center justify-between gap-2">
+            <button
+              onClick={() => setDisplayMonth(subMonths(displayMonth, 1))}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-3 flex-1 justify-center">
+              <select
+                value={displayMonth.getMonth()}
+                onChange={(e) => {
+                  const newDate = new Date(displayMonth);
+                  newDate.setMonth(parseInt(e.target.value));
+                  setDisplayMonth(newDate);
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                {monthNames.map((month, i) => (
+                  <option key={month} value={i}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={displayMonth.getFullYear()}
+                onChange={(e) => {
+                  const newDate = new Date(displayMonth);
+                  newDate.setFullYear(parseInt(e.target.value));
+                  setDisplayMonth(newDate);
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                {Array.from({ length: 20 }, (_, i) => new Date().getFullYear() - 10 + i).map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() => setDisplayMonth(addMonths(displayMonth, 1))}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Day Headers */}
+          <div className="mb-3 grid grid-cols-7 gap-2">
+            {dayNames.map((day) => (
+              <div key={day} className="text-center text-xs font-bold text-slate-500 uppercase">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-2">
+            {calendarDays.map((day, i) => {
+              const isCurrentMonth = isSameMonth(day, displayMonth);
+              const isSelected = isSameDay(day, selectedDate);
+              const isToday = isSameDay(day, new Date());
+
+              return (
+                <button
+                  key={i}
+                  onClick={() => onDateSelect(day)}
+                  className={`aspect-square rounded-lg text-sm font-semibold transition-all ${
+                    isSelected
+                      ? "bg-accent text-black shadow-lg shadow-accent/50"
+                      : isToday && isCurrentMonth
+                        ? "border-2 border-accent bg-accent/10 text-accent"
+                        : isCurrentMonth
+                          ? "text-white hover:bg-slate-800 hover:shadow-md"
+                          : "text-slate-600 hover:bg-slate-800/30"
+                  }`}
+                  disabled={!isCurrentMonth}
+                >
+                  {day.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
 
 function CapturedDetailsCard({ title, details }) {
@@ -404,10 +534,7 @@ export default function TimesheetsPage() {
         </button>
       </div>
 
-      <div className="relative flex items-center justify-between card px-5 py-3 animate-fade-up">
-        <button onClick={() => setCurrentMonth((m) => subMonths(m, 1))} className="text-slate-400 hover:text-white transition-colors">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
+      <div className="flex items-center justify-between card px-5 py-3 animate-fade-up">
         <button
           type="button"
           onClick={() => setShowMonthPicker((current) => !current)}
@@ -416,26 +543,18 @@ export default function TimesheetsPage() {
           <CalendarDays className="h-4 w-4 text-accent" />
           {format(currentMonth, "MMMM yyyy")}
         </button>
-        <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))} className="text-slate-400 hover:text-white transition-colors">
-          <ChevronRight className="w-5 h-5" />
-        </button>
-
-        {showMonthPicker && (
-          <div className="absolute left-1/2 top-full z-[80] mt-2 w-72 -translate-x-1/2 rounded-2xl border border-slate-800 bg-slate-950 p-4 shadow-2xl shadow-black/40">
-            <label className="label">Select Month & Year</label>
-            <input
-              type="month"
-              className="input"
-              value={format(currentMonth, "yyyy-MM")}
-              onChange={(event) => {
-                if (!event.target.value) return;
-                setCurrentMonth(new Date(`${event.target.value}-01T00:00:00`));
-                setShowMonthPicker(false);
-              }}
-            />
-          </div>
-        )}
       </div>
+
+      {showMonthPicker && (
+        <MonthYearCalendar
+          selectedDate={currentMonth}
+          onDateSelect={(date) => {
+            setCurrentMonth(date);
+            setShowMonthPicker(false);
+          }}
+          onClose={() => setShowMonthPicker(false)}
+        />
+      )}
 
       <div className="grid grid-cols-3 gap-4 animate-fade-up">
         {[

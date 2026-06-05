@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate } from "react-router-dom";
+import type { ComponentType, FocusEvent, ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { formatDistanceToNow } from "date-fns";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 import { buildMemberActivity, sortTimeActivity } from "../lib/timeRecords";
+import type { TimeActivity } from "../lib/timeRecords";
 import {
   Clock, LayoutDashboard, Users, FileText,
   Calendar, BarChart2, Settings, LogOut, Menu, X, ChevronRight,
@@ -24,18 +26,53 @@ const navItems = [
   { to: "/users", icon: UserPlus, label: "Users" },
 ];
 
-function NotificationRow({ icon: Icon, title, body, tone = "default" }) {
+type NotificationTone = "default" | "success" | "warning" | "info";
+
+type NotificationRowProps = {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  body: string;
+  tone?: NotificationTone;
+};
+
+type NotificationItem = NotificationRowProps & {
+  id: string;
+};
+
+type LatestPunch = {
+  type?: string | null;
+  timestamp?: string | null;
+};
+
+type LatestLeaveRequest = {
+  status?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  created_at?: string | null;
+};
+
+type NotificationState = {
+  loading: boolean;
+  latestPunch: LatestPunch | null;
+  latestMemberActivity: TimeActivity | null;
+  activeMemberSessions: number;
+  latestLeaveRequest: LatestLeaveRequest | null;
+  pendingLeaveCount: number;
+  error: string;
+};
+
+function NotificationRow({ icon: Icon, title, body, tone = "default" }: NotificationRowProps) {
   const toneClasses = {
-    default: "border-slate-800 bg-slate-900/70 text-slate-300",
+    default: "border-slate-800 bg-slate-900/80 text-slate-300",
     success: "border-accent/20 bg-accent/10 text-accent",
     warning: "border-warn/20 bg-warn/10 text-warn",
     info: "border-info/20 bg-info/10 text-info",
-  };
+  } satisfies Record<NotificationTone, string>;
 
   return (
-    <div className={`rounded-2xl border px-3 py-3 ${toneClasses[tone] || toneClasses.default}`}>
+    <div className={`rounded-xl border px-3 py-3 shadow-sm ${toneClasses[tone] || toneClasses.default}`}>
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl border border-current/15 bg-black/10">
+        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-current/15 bg-black/10">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
@@ -47,14 +84,14 @@ function NotificationRow({ icon: Icon, title, body, tone = "default" }) {
   );
 }
 
-export default function Layout({ children }) {
+export default function Layout({ children }: { children: ReactNode }) {
   const { profile, signOut, displayName } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationPanelStyle, setNotificationPanelStyle] = useState({ top: 56, right: 16, width: 352 });
-  const [notificationState, setNotificationState] = useState({
+  const [notificationState, setNotificationState] = useState<NotificationState>({
     loading: false,
     latestPunch: null,
     latestMemberActivity: null,
@@ -63,9 +100,9 @@ export default function Layout({ children }) {
     pendingLeaveCount: 0,
     error: "",
   });
-  const notificationRef = useRef(null);
-  const notificationButtonRef = useRef(null);
-  const notificationPanelRef = useRef(null);
+  const notificationRef = useRef<HTMLDivElement | null>(null);
+  const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
+  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const isAdmin = hasManagementAccess(profile?.role);
 
   async function handleSignOut() {
@@ -187,15 +224,16 @@ export default function Layout({ children }) {
       });
     }
 
-    function handlePointerDown(event) {
-      const clickedTrigger = notificationRef.current?.contains(event.target);
-      const clickedPanel = notificationPanelRef.current?.contains(event.target);
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target instanceof Node ? event.target : null;
+      const clickedTrigger = target ? notificationRef.current?.contains(target) : false;
+      const clickedPanel = target ? notificationPanelRef.current?.contains(target) : false;
       if (!clickedTrigger && !clickedPanel) {
         setNotificationsOpen(false);
       }
     }
 
-    function handleEscape(event) {
+    function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setNotificationsOpen(false);
       }
@@ -280,7 +318,7 @@ export default function Layout({ children }) {
     };
   }, [profile?.id, isAdmin, loadNotificationState]);
 
-  const notifications = [];
+  const notifications: NotificationItem[] = [];
 
   if (!profile?.department) {
     notifications.push({
@@ -358,18 +396,18 @@ export default function Layout({ children }) {
   const unreadCount = notifications.length;
   const visibleNavItems = navItems;
 
-  const handleDesktopSidebarBlur = (event) => {
+  const handleDesktopSidebarBlur = (event: FocusEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget)) {
       setDesktopSidebarExpanded(false);
     }
   };
 
-  const SidebarContent = ({ compact = false }) => (
+  const SidebarContent = ({ compact = false }: { compact?: boolean }) => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className={`border-b border-slate-800 py-6 ${compact ? "px-3" : "px-4"}`}>
+      <div className={`border-b border-slate-800/80 py-5 ${compact ? "px-3" : "px-4"}`}>
         <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-          <div className="w-9 h-9 rounded-xl bg-accent/10 border border-accent/30 flex items-center justify-center clock-ring">
+          <div className="w-9 h-9 rounded-lg bg-accent/10 border border-accent/25 flex items-center justify-center clock-ring">
             <Building2 className="w-4 h-4 text-accent" />
           </div>
           <div className={compact ? "hidden" : "min-w-0"}>
@@ -379,8 +417,8 @@ export default function Layout({ children }) {
       </div>
 
       {/* Nav */}
-      <nav className={`flex-1 py-4 space-y-0.5 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
-        {!compact && <p className="text-slate-600 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
+      <nav className={`flex-1 py-4 space-y-1 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
+        {!compact && <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
         {visibleNavItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -397,9 +435,9 @@ export default function Layout({ children }) {
       </nav>
 
       {/* User */}
-      <div className={`border-t border-slate-800 ${compact ? "p-2" : "p-3"}`}>
-        <div className={`rounded-xl ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent/30 to-accent/10 border border-accent/20 flex items-center justify-center text-accent text-xs font-bold font-display flex-shrink-0">
+      <div className={`border-t border-slate-800/80 ${compact ? "p-2" : "p-3"}`}>
+        <div className={`rounded-xl bg-slate-900/50 ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
+          <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent text-xs font-bold font-display flex-shrink-0">
             {initials}
           </div>
           <div className={compact ? "hidden" : "flex-1 min-w-0"}>
@@ -419,10 +457,10 @@ export default function Layout({ children }) {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col border-r border-slate-800 bg-slate-950/90 flex-shrink-0 transition-[width] duration-300 ease-out ${
+        className={`hidden lg:flex flex-col border-r border-slate-800/80 bg-slate-950/95 flex-shrink-0 shadow-2xl shadow-black/20 transition-[width] duration-300 ease-out ${
           desktopSidebarExpanded ? "w-60" : "w-20"
         }`}
         onMouseEnter={() => setDesktopSidebarExpanded(true)}
@@ -436,8 +474,8 @@ export default function Layout({ children }) {
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="relative w-64 bg-slate-950 border-r border-slate-800 flex flex-col z-10">
+          <div className="fixed inset-0 bg-black/65 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+          <aside className="relative w-64 bg-slate-950 border-r border-slate-800 flex flex-col z-10 shadow-2xl">
             <button
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
               onClick={() => setSidebarOpen(false)}
@@ -452,7 +490,7 @@ export default function Layout({ children }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="h-14 border-b border-slate-800 bg-slate-950/80 backdrop-blur-sm flex items-center px-4 gap-4 flex-shrink-0">
+        <header className="h-14 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md flex items-center px-4 gap-4 flex-shrink-0">
           <button className="lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
@@ -465,7 +503,7 @@ export default function Layout({ children }) {
               className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
                 notificationsOpen
                   ? "border-accent/40 bg-accent/10 text-accent"
-                  : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"
+                  : "border-slate-700/80 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
               }`}
               title="Notifications"
               aria-label="Toggle notifications"
@@ -485,7 +523,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.06),transparent_34%)] p-4 lg:p-6">
           {children}
         </main>
       </div>
@@ -494,7 +532,7 @@ export default function Layout({ children }) {
         <div className="pointer-events-none fixed inset-0 z-[120]">
           <div
             ref={notificationPanelRef}
-            className="pointer-events-auto fixed rounded-3xl border border-slate-800 bg-slate-950/95 p-4 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-auto fixed rounded-xl border border-slate-800 bg-slate-950/95 p-4 shadow-2xl shadow-black/40 backdrop-blur"
             style={notificationPanelStyle}
           >
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -507,7 +545,7 @@ export default function Layout({ children }) {
               <button
                 type="button"
                 onClick={() => setNotificationsOpen(false)}
-                className="rounded-xl border border-slate-800 p-2 text-slate-500 transition-colors hover:text-white"
+                className="rounded-lg border border-slate-800 p-2 text-slate-500 transition-colors hover:border-slate-700 hover:text-white"
                 aria-label="Close notifications"
               >
                 <X className="h-4 w-4" />
@@ -515,15 +553,15 @@ export default function Layout({ children }) {
             </div>
 
             {notificationState.loading ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
                 Loading notifications...
               </div>
             ) : notificationState.error ? (
-              <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-5 text-sm text-danger">
+              <div className="rounded-xl border border-danger/20 bg-danger/10 px-4 py-5 text-sm text-danger">
                 {notificationState.error}
               </div>
             ) : notifications.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
                 No new notifications right now.
               </div>
             ) : (
