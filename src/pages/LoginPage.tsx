@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertCircle, Eye, EyeOff, Zap } from "lucide-react";
+import { AlertCircle, ArrowRight, Building2, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { getSafeRedirectPath } from "../lib/authRedirect";
 import { SUPABASE_CONFIG_ERROR } from "../lib/supabase";
@@ -18,9 +18,11 @@ export default function LoginPage() {
     password: "",
   });
 
-  const setSignInField = (key) => (event) => setSignInForm((current) => ({ ...current, [key]: event.target.value }));
+  const setSignInField = (key: keyof typeof signInForm) => (event: ChangeEvent<HTMLInputElement>) => {
+    setSignInForm((current) => ({ ...current, [key]: event.target.value }));
+  };
 
-  async function handleSignIn(event) {
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setLoading(true);
@@ -44,96 +46,105 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-[600px] h-[600px] rounded-full bg-accent/5 blur-3xl" />
-      </div>
-
-      <div className="w-full max-w-md animate-fade-up">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 border border-accent/30 mb-4 clock-ring">
-            <Zap className="w-7 h-7 text-accent" />
-          </div>
-          <h1 className="font-display font-bold text-3xl text-white">ChronoTrack</h1>
-          <p className="text-slate-400 mt-1">Smart Employee Time Clock</p>
-        </div>
-
-        <div className="card p-6">
-          <div className="mb-6">
-            <h2 className="font-display text-xl font-semibold text-white">Sign In</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Admin access is applied automatically for signed-in users.
-            </p>
+    <div className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl place-items-center gap-8">
+        <div className="w-full max-w-md animate-fade-up">
+          <div className="mb-6 flex items-center gap-3 lg:hidden">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/25 bg-accent/10">
+              <Building2 className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <h1 className="font-display text-lg font-semibold text-white">Attendance Management</h1>
+              <p className="text-xs text-slate-500">Workforce attendance operations</p>
+            </div>
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-3 mb-4">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {SUPABASE_CONFIG_ERROR && !error && (
-            <div className="flex items-center gap-2 text-warn text-sm bg-warn/10 border border-warn/20 rounded-xl px-4 py-3 mb-4">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {SUPABASE_CONFIG_ERROR}
-            </div>
-          )}
-
-          <form className="space-y-4" onSubmit={handleSignIn}>
-            <div>
-              <label className="label">Email Address</label>
-              <input
-                className="input"
-                type="email"
-                placeholder="admin@company.com"
-                value={signInForm.email}
-                onChange={setSignInField("email")}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="label">Password</label>
-              <div className="relative">
-                <input
-                  className="input pr-12"
-                  type={showPass ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={signInForm.password}
-                  onChange={setSignInField("password")}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                >
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          <div className="card p-6 sm:p-7">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-2xl font-semibold text-white">Sign in</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Use your organization account to continue.
+                </p>
+              </div>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+                <ShieldCheck className="h-5 w-5" />
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full mt-6 justify-center flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign In"
-              )}
-            </button>
-          </form>
-        </div>
+            {error && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
 
-        <p className="text-center text-slate-600 text-xs mt-6">
-          ChronoTrack © {new Date().getFullYear()} - Enterprise Time Tracking
-        </p>
+            {SUPABASE_CONFIG_ERROR && !error && (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-warn/20 bg-warn/10 px-4 py-3 text-sm text-warn">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {SUPABASE_CONFIG_ERROR}
+              </div>
+            )}
+
+            <form className="space-y-4" onSubmit={handleSignIn}>
+              <div>
+                <label className="label">Email Address</label>
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="admin@company.com"
+                  value={signInForm.email}
+                  onChange={setSignInField("email")}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label">Password</label>
+                <div className="relative">
+                  <input
+                    className="input pr-12"
+                    type={showPass ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={signInForm.password}
+                    onChange={setSignInField("password")}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass((current) => !current)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-300"
+                    aria-label={showPass ? "Hide password" : "Show password"}
+                  >
+                    {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary mt-6 flex w-full items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    Sign in
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-6 text-center text-xs text-slate-600">
+              Attendance Management © {new Date().getFullYear()}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

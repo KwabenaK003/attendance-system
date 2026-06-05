@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode, type ComponentType, type SVGProps } from "react";
+import type { FaceEnrollment } from "../types";
 import {
   AlertCircle,
   Bell,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import FaceCaptureField from "../components/FaceCaptureField";
 import { useAuth } from "../context/AuthContext";
+import type { WeekDayValue } from "../lib/systemSettings";
 import {
   DATE_FORMAT_OPTIONS,
   defaultSystemSettings,
@@ -76,7 +78,42 @@ function getTimezoneOptions() {
 
 const TIMEZONE_OPTIONS = getTimezoneOptions();
 
-function TabButton({ active, icon: Icon, label, description, onClick }) {
+type ToastMessage = {
+  type: "success" | "error";
+  message: string;
+};
+
+type AccountFormState = {
+  full_name: string;
+  department: string;
+  company_name: string;
+  hourly_rate: string | number;
+  faceEnrollment: FaceEnrollment | null;
+};
+
+type TabButtonProps = {
+  active: boolean;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  label: string;
+  description?: string;
+  onClick: () => void;
+};
+
+type DayCheckboxProps = {
+  label: string;
+  checked: boolean;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+};
+
+type ToggleRowProps = {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+};
+
+function TabButton({ active, icon: Icon, label, description, onClick }: TabButtonProps) {
   return (
     <button
       type="button"
@@ -121,7 +158,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function DayCheckbox({ label, checked, onChange }) {
+function DayCheckbox({ label, checked, onChange }: DayCheckboxProps) {
   return (
     <label className={`flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 transition-colors ${
       checked
@@ -139,7 +176,7 @@ function DayCheckbox({ label, checked, onChange }) {
   );
 }
 
-function ToggleRow({ label, description, checked, onChange, disabled = false }) {
+function ToggleRow({ label, description, checked, onChange, disabled = false }: ToggleRowProps) {
   return (
     <div className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${checked ? "border-accent/20 bg-accent/10" : "border-slate-800 bg-slate-950/30"}`}>
       <div className="min-w-0">
@@ -166,7 +203,7 @@ function ToggleRow({ label, description, checked, onChange, disabled = false }) 
   );
 }
 
-function Toast({ toast }) {
+function Toast({ toast }: { toast: ToastMessage | null }) {
   if (!toast) return null;
 
   return (
@@ -183,10 +220,10 @@ function Toast({ toast }) {
   );
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(new Error("Unable to read logo file."));
     reader.readAsDataURL(file);
   });
@@ -198,7 +235,7 @@ export default function SettingsPage() {
   const [systemSettings, setSystemSettings] = useState(defaultSystemSettings);
   const [storageMode, setStorageMode] = useState("local");
   const [remoteNotice, setRemoteNotice] = useState("");
-  const [accountForm, setAccountForm] = useState({
+  const [accountForm, setAccountForm] = useState<AccountFormState>({
     full_name: profile?.full_name || "",
     department: profile?.department || "",
     company_name: profile?.company_name || "",
@@ -208,7 +245,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
   const [smtpTesting, setSmtpTesting] = useState(false);
 
   useEffect(() => {
@@ -253,12 +290,12 @@ export default function SettingsPage() {
   const ActiveTabIcon = activeTabMeta.icon;
   const isImmediateApplyTab = activeTab === "email" || activeTab === "attendance";
 
-  const setAccountField = (key) => (event) => {
+  const setAccountField = (key: keyof Omit<AccountFormState, "faceEnrollment">) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const value = event?.target?.value ?? "";
     setAccountForm((current) => ({ ...current, [key]: value }));
   };
 
-  const setSystemField = (section, key, value) => {
+  const setSystemField = (section: keyof typeof systemSettings, key: string, value: string | boolean | number | null) => {
     setSystemSettings((current) => normalizeSystemSettings({
       ...current,
       [section]: {
@@ -268,7 +305,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const toggleWorkDay = (day) => {
+  const toggleWorkDay = (day: WeekDayValue) => {
     setSystemSettings((current) => {
       const activeDays = current.general.workDays.includes(day)
         ? current.general.workDays.filter((entry) => entry !== day)
@@ -284,7 +321,7 @@ export default function SettingsPage() {
     });
   };
 
-  async function handleLogoUpload(event) {
+  async function handleLogoUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -823,7 +860,7 @@ export default function SettingsPage() {
           </div>
 
           <FaceCaptureField
-            existingReference={profile?.face_reference}
+            existingReference={profile?.face_reference as import("../types").FaceReference | null | undefined}
             value={accountForm.faceEnrollment}
             onChange={(faceEnrollment) => setAccountForm((current) => ({ ...current, faceEnrollment }))}
             helperText="Replace your enrolled face reference anytime. Face Clock works best with a straight-on photo."

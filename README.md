@@ -1,4 +1,4 @@
-# ChronoTrack — Smart Employee Time Clock
+# Attendance Management
 
 A full-featured time tracking web application built with React, Tailwind CSS, Vite, and Supabase.
 

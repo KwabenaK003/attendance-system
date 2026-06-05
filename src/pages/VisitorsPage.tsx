@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
@@ -13,31 +13,81 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 
-const EMPTY_FORM = {
-  id: null,
-  full_name: "",
-  company_name: "",
-  purpose_of_visit: "",
-  host_member_id: "",
-  phone: "",
-  email: "",
-  notes: "",
-  visit_date: format(new Date(), "yyyy-MM-dd"),
+type VisitorHost = {
+  full_name?: string | null;
 };
 
-function isMissingVisitorsTable(error) {
-  const message = error?.message || "";
+type VisitorRow = LooseRow & {
+  host_member?: VisitorHost | VisitorHost[] | null;
+};
+
+type VisitorFormState = {
+  id: string | null;
+  full_name: string;
+  company_name: string | null;
+  purpose_of_visit: string;
+  host_member_id: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  visit_date: string;
+};
+
+type VisitorFormSaveResult = {
+  error?: { message?: string } | null;
+};
+
+function getVisitorHostFullName(visitor: VisitorRow): string | null {
+  if (Array.isArray(visitor.host_member)) {
+    return visitor.host_member[0]?.full_name ?? null;
+  }
+
+  return visitor.host_member?.full_name ?? null;
+}
+
+function buildFormStateFromVisitor(visitor: VisitorRow | null): VisitorFormState {
+  const DEFAULT_FORM: VisitorFormState = {
+    id: null,
+    full_name: "",
+    company_name: "",
+    purpose_of_visit: "",
+    host_member_id: "",
+    phone: "",
+    email: "",
+    notes: "",
+    visit_date: format(new Date(), "yyyy-MM-dd"),
+  };
+
+  if (!visitor) return DEFAULT_FORM;
+
+  return {
+    id: visitor.id || null,
+    full_name: visitor.full_name || "",
+    company_name: visitor.company_name || "",
+    purpose_of_visit: visitor.purpose_of_visit || "",
+    host_member_id: visitor.host_member_id || "",
+    phone: visitor.phone || "",
+    email: visitor.email || "",
+    notes: visitor.notes || "",
+    visit_date: visitor.visit_date ? format(new Date(String(visitor.visit_date)), "yyyy-MM-dd") : DEFAULT_FORM.visit_date,
+  };
+}
+
+const EMPTY_FORM: VisitorFormState = buildFormStateFromVisitor(null);
+
+function isMissingVisitorsTable(error: unknown) {
+  const message = (error as { message?: string })?.message || "";
   return /visitors/i.test(message)
     && /(does not exist|not found|relation|schema cache)/i.test(message)
     && !/column/i.test(message);
 }
 
-function isMissingVisitorsColumn(error) {
-  const message = error?.message || "";
+function isMissingVisitorsColumn(error: unknown) {
+  const message = (error as { message?: string })?.message || "";
   return /visitors/i.test(message) && /column/i.test(message) && /(not found|schema cache)/i.test(message);
 }
 
-function visitorsSchemaHelp(error) {
+function visitorsSchemaHelp(error: unknown) {
   if (isMissingVisitorsColumn(error)) {
     return "The visitors table exists, but it is missing one or more required columns. Re-run `supabase/create_visitors_table.sql` in the Supabase SQL editor, then refresh this page.";
   }
@@ -49,32 +99,33 @@ function visitorsSchemaHelp(error) {
   return "";
 }
 
-function isUpdatedAtColumnError(error) {
-  const message = error?.message || "";
+function isUpdatedAtColumnError(error: unknown) {
+  const message = (error as { message?: string })?.message || "";
   return /updated_at/i.test(message) && /(column|schema cache|not found)/i.test(message);
 }
 
-function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
-  const buildFormState = (visitor) => ({
-    ...EMPTY_FORM,
-    ...visitor,
-    host_member_id: visitor?.host_member_id || "",
-    visit_date: visitor?.visit_date ? format(new Date(visitor.visit_date), "yyyy-MM-dd") : EMPTY_FORM.visit_date,
-  });
+type VisitorFormModalProps = {
+  initial: VisitorFormState | null;
+  members: LooseRow[];
+  saving: boolean;
+  onClose: () => void;
+  onSave: (form: VisitorFormState) => Promise<VisitorFormSaveResult>;
+};
 
-  const [form, setForm] = useState(initial ? buildFormState(initial) : EMPTY_FORM);
+function VisitorFormModal({ initial, members, saving, onClose, onSave }: VisitorFormModalProps) {
+  const [form, setForm] = useState<VisitorFormState>(initial || EMPTY_FORM);
   const [error, setError] = useState("");
   const [hostSearch, setHostSearch] = useState("");
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
 
   useEffect(() => {
-    setForm(initial ? buildFormState(initial) : EMPTY_FORM);
+    setForm(initial || EMPTY_FORM);
     setError("");
     setHostSearch("");
     setHostPickerOpen(false);
   }, [initial]);
 
-  const set = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const set = (field: keyof VisitorFormState) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((current) => ({ ...current, [field]: event.target.value }));
   const filteredMembers = members.filter((member) => {
     const query = hostSearch.trim().toLowerCase();
     if (!query) return true;
@@ -82,7 +133,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
   });
   const selectedHost = members.find((member) => member.id === form.host_member_id);
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!form.full_name.trim()) {
@@ -102,7 +153,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
 
     setError("");
     try {
-      const result = await onSave(form);
+      const result = await onSave(form as VisitorFormState);
       if (result?.error) {
         setError(result.error.message || "Unable to save visitor.");
       }
@@ -151,7 +202,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
             <input
               className="input"
               placeholder="Northwind Labs"
-              value={form.company_name}
+              value={form.company_name || ""}
               onChange={set("company_name")}
             />
           </div>
@@ -193,7 +244,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
                       key={member.id}
                       type="button"
                       onClick={() => {
-                        setForm((current) => ({ ...current, host_member_id: member.id }));
+                        setForm((current) => ({ ...current, host_member_id: member.id || "" }));
                         setHostSearch(member.full_name || "");
                         setHostPickerOpen(false);
                       }}
@@ -220,7 +271,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
             <input
               className="input"
               placeholder="+233 XX XXX XXXX"
-              value={form.phone}
+              value={form.phone || ""}
               onChange={set("phone")}
             />
           </div>
@@ -230,7 +281,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
               type="email"
               className="input"
               placeholder="visitor@company.com"
-              value={form.email}
+              value={form.email || ""}
               onChange={set("email")}
             />
           </div>
@@ -240,7 +291,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
               className="input resize-none"
               rows={3}
               placeholder="Extra instructions, room number, or arrival details"
-              value={form.notes}
+              value={form.notes || ""}
               onChange={set("notes")}
             />
           </div>
@@ -262,14 +313,14 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }) {
 
 export default function VisitorsPage() {
   const { profile } = useAuth();
-  const [visitors, setVisitors] = useState<LooseRow[]>([]);
+  const [visitors, setVisitors] = useState<VisitorRow[]>([]);
   const [members, setMembers] = useState<LooseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [editingVisitor, setEditingVisitor] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editingVisitor, setEditingVisitor] = useState<VisitorFormState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VisitorRow | null>(null);
   const [error, setError] = useState("");
   const [schemaError, setSchemaError] = useState("");
 
@@ -319,14 +370,14 @@ export default function VisitorsPage() {
         setError(visitorsResult.error.message || "Unable to load visitors.");
       }
     } else {
-      setVisitors(visitorsResult.data || []);
+      setVisitors((visitorsResult.data || []) as VisitorRow[]);
       setSchemaError("");
     }
 
     setLoading(false);
   }
 
-  async function handleSaveVisitor(form) {
+  async function handleSaveVisitor(form: VisitorFormState) {
     if (!profile?.id) {
       return { error: new Error("Your session is still loading. Please try again.") };
     }
@@ -336,12 +387,12 @@ export default function VisitorsPage() {
 
     const payload = {
       full_name: form.full_name.trim(),
-      company_name: form.company_name.trim() || null,
+      company_name: (form.company_name || "").trim() || null,
       purpose_of_visit: form.purpose_of_visit.trim(),
       host_member_id: form.host_member_id || null,
-      phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
-      notes: form.notes.trim() || null,
+      phone: (form.phone || "").trim() || null,
+      email: (form.email || "").trim() || null,
+      notes: (form.notes || "").trim() || null,
       visit_date: form.visit_date || format(new Date(), "yyyy-MM-dd"),
     };
     const createPayload = { ...payload, created_by: profile.id };
@@ -354,7 +405,7 @@ export default function VisitorsPage() {
       updated_at: payloadWithTimestamp.updated_at,
     };
 
-    let saveResult;
+    let saveResult: { error?: { message?: string } | null; data?: VisitorRow | null } = { data: null, error: null };
 
     try {
       saveResult = form.id
@@ -458,12 +509,13 @@ export default function VisitorsPage() {
       return { error: noRowsError };
     }
 
+    const savedVisitor = saveResult.data;
     setVisitors((current) => {
-      const exists = current.some((visitor) => visitor.id === saveResult.data.id);
+      const exists = current.some((visitor) => visitor.id === savedVisitor.id);
       if (exists) {
-        return current.map((visitor) => visitor.id === saveResult.data.id ? saveResult.data : visitor);
+        return current.map((visitor) => visitor.id === savedVisitor.id ? savedVisitor : visitor);
       }
-      return [saveResult.data, ...current];
+      return [savedVisitor, ...current];
     });
     setShowForm(false);
     setEditingVisitor(null);
@@ -471,7 +523,7 @@ export default function VisitorsPage() {
     return {};
   }
 
-  async function handleDeleteVisitor(visitorId) {
+  async function handleDeleteVisitor(visitorId: string) {
     const { error: deleteError } = await supabase.from("visitors").delete().eq("id", visitorId);
 
     if (deleteError) {
@@ -501,7 +553,7 @@ export default function VisitorsPage() {
         visitor.purpose_of_visit,
         visitor.email,
         visitor.phone,
-        visitor.host_member?.full_name,
+        getVisitorHostFullName(visitor),
       ]
         .filter(Boolean)
         .join(" ")
@@ -622,9 +674,9 @@ export default function VisitorsPage() {
                         </div>
                       </td>
                       <td className="px-5 py-4 text-slate-300">{visitor.purpose_of_visit || "-"}</td>
-                      <td className="px-5 py-4 text-slate-300">{visitor.host_member?.full_name || "-"}</td>
+                      <td className="px-5 py-4 text-slate-300">{Array.isArray(visitor.host_member) ? visitor.host_member[0]?.full_name || "-" : visitor.host_member?.full_name || "-"}</td>
                       <td className="px-5 py-4 text-slate-400">
-                        <p>{format(new Date(visitor.visit_date || visitor.created_at), "dd MMM yyyy")}</p>
+                        <p>{format(new Date(String(visitor.visit_date || visitor.created_at)), "dd MMM yyyy")}</p>
                         <p className="text-xs text-slate-500">
                           {visitor.created_at ? format(new Date(visitor.created_at), "hh:mm a") : "-"}
                         </p>
@@ -633,10 +685,7 @@ export default function VisitorsPage() {
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => {
-                              setEditingVisitor({
-                                ...visitor,
-                                host_member_id: visitor.host_member_id || "",
-                              });
+                              setEditingVisitor(buildFormStateFromVisitor(visitor));
                               setShowForm(true);
                             }}
                             className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
@@ -685,7 +734,7 @@ export default function VisitorsPage() {
               This will remove {deleteTarget.full_name}&apos;s visitor record.
             </p>
             <div className="flex gap-3">
-              <button onClick={() => handleDeleteVisitor(deleteTarget.id)} className="btn-danger flex-1 justify-center">
+              <button onClick={() => deleteTarget?.id && handleDeleteVisitor(deleteTarget.id)} className="btn-danger flex-1 justify-center">
                 Delete
               </button>
               <button onClick={() => setDeleteTarget(null)} className="btn-secondary flex-1 justify-center">

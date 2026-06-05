@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   AlertCircle,
   CheckCircle,
@@ -13,9 +13,22 @@ import {
 } from "lucide-react";
 import { createDetachedSupabaseClient, SUPABASE_CONFIG_ERROR, supabase } from "../lib/supabase";
 
+type UserEditorForm = {
+  fullName: string;
+  email: string;
+  password: string;
+};
+
+type UserEditorModalProps = {
+  user: LooseRow | null;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (user: LooseRow | null, form: UserEditorForm) => Promise<{ error?: unknown }>;
+};
+
 const LOCAL_USERS_KEY = "attendance-system:created-admin-users";
 
-function readLocalUsers() {
+function readLocalUsers(): LooseRow[] {
   if (typeof window === "undefined") return [];
 
   try {
@@ -26,7 +39,7 @@ function readLocalUsers() {
   }
 }
 
-function writeLocalUsers(users) {
+function writeLocalUsers(users: LooseRow[]) {
   if (typeof window === "undefined") return;
 
   try {
@@ -36,7 +49,7 @@ function writeLocalUsers(users) {
   }
 }
 
-function upsertLocalUser(user) {
+function upsertLocalUser(user: LooseRow) {
   const users = readLocalUsers();
   const existingIndex = users.findIndex((entry) => entry.id === user.id || entry.email === user.email);
   const nextUser = {
@@ -55,15 +68,15 @@ function upsertLocalUser(user) {
   return users;
 }
 
-function removeLocalUser(userId) {
+function removeLocalUser(userId: string) {
   const users = readLocalUsers().filter((entry) => entry.id !== userId);
   writeLocalUsers(users);
   return users;
 }
 
-function UserEditorModal({ user, saving, onClose, onSave }) {
+function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps) {
   const isCreateMode = !user?.id;
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<UserEditorForm>({
     fullName: user?.full_name || "",
     email: user?.email || "",
     password: "",
@@ -80,9 +93,10 @@ function UserEditorModal({ user, saving, onClose, onSave }) {
     setError("");
   }, [user]);
 
-  const set = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const set = (field: keyof UserEditorForm) => (event: ChangeEvent<HTMLInputElement>) =>
+    setForm((current) => ({ ...current, [field]: event.target.value }));
 
-  async function handleSubmit(event) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!form.fullName.trim() || !form.email.trim() || (isCreateMode && !form.password)) {
@@ -93,7 +107,7 @@ function UserEditorModal({ user, saving, onClose, onSave }) {
     setError("");
     const result = await onSave(user, form);
     if (result?.error) {
-      setError(result.error.message || "Unable to save user.");
+      setError(result.error instanceof Error ? result.error.message : String(result.error || "Unable to save user."));
     }
   }
 
@@ -177,10 +191,10 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [activeMenuId, setActiveMenuId] = useState(null);
-  const [editingUser, setEditingUser] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [editingUser, setEditingUser] = useState<LooseRow | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState<LooseRow | null>(null);
 
   useEffect(() => {
     void fetchUsers();
@@ -189,8 +203,8 @@ export default function UsersPage() {
   useEffect(() => {
     if (!activeMenuId) return undefined;
 
-    function handlePointerDown(event) {
-      if (!event.target.closest("[data-user-actions]")) {
+    function handlePointerDown(event: MouseEvent) {
+      if (!(event.target as HTMLElement).closest("[data-user-actions]")) {
         setActiveMenuId(null);
       }
     }
@@ -237,7 +251,7 @@ export default function UsersPage() {
     }
   }
 
-  async function handleCreateUser(_user, nextForm) {
+  async function handleCreateUser(_user: LooseRow | null, nextForm: UserEditorForm) {
     setError("");
     setSuccess("");
 
@@ -301,9 +315,14 @@ export default function UsersPage() {
 
       setUsers((current) => {
         const existingIds = new Set(current.map((entry) => entry.id));
+        const createdLocalUser = nextLocalUsers.find((local) => local.id === createdUser.id);
+        if (!createdLocalUser) {
+          return current;
+        }
+
         return existingIds.has(createdUser.id)
-          ? current.map((entry) => entry.id === createdUser.id ? { ...entry, ...nextLocalUsers.find((local) => local.id === createdUser.id) } : entry)
-          : [nextLocalUsers.find((local) => local.id === createdUser.id), ...current].filter(Boolean);
+          ? current.map((entry) => entry.id === createdUser.id ? { ...entry, ...createdLocalUser } : entry)
+          : [createdLocalUser, ...current];
       });
       setSuccess(`User created as an admin.${profileWarning}`);
       setCreatingUser(false);
@@ -316,7 +335,11 @@ export default function UsersPage() {
     }
   }
 
-  async function handleEditUser(user, nextForm) {
+  async function handleEditUser(user: LooseRow | null, nextForm: UserEditorForm) {
+    if (!user) {
+      return { error: new Error("Selected user is missing.") };
+    }
+
     setSaving(true);
     setError("");
     setSuccess("");
@@ -353,7 +376,7 @@ export default function UsersPage() {
     }
   }
 
-  async function handleDeleteUser(user) {
+  async function handleDeleteUser(user: LooseRow) {
     setError("");
     setSuccess("");
 
@@ -365,7 +388,9 @@ export default function UsersPage() {
         }
       }
 
-      removeLocalUser(user.id);
+      if (user.id) {
+        removeLocalUser(user.id);
+      }
       setUsers((current) => current.filter((entry) => entry.id !== user.id));
       setDeleteTarget(null);
       setActiveMenuId(null);
@@ -438,7 +463,7 @@ export default function UsersPage() {
                 <div data-user-actions className="relative">
                   <button
                     type="button"
-                    onClick={() => setActiveMenuId((currentId) => currentId === user.id ? null : user.id)}
+                    onClick={() => setActiveMenuId((currentId) => currentId === (user.id ?? "") ? null : (user.id ?? ""))}
                     className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
                     aria-label={`Open actions for ${user.full_name || user.email || "user"}`}
                   >

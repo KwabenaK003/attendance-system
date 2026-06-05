@@ -10,7 +10,7 @@ import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
 
-const COLORS = ["#00e5be", "#60a5fa", "#fbbf24", "#ff4d6d", "#a78bfa"];
+const COLORS = ["#3b82f6", "#60a5fa", "#fbbf24", "#ff4d6d", "#a78bfa"];
 
 type ChartTooltipPayload = {
   color?: string;
@@ -245,7 +245,7 @@ export default function ReportsPage() {
                 <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="hours" fill="#00e5be" radius={[4, 4, 0, 0]} opacity={0.85} />
+                <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.85} />
               </BarChart>
             </ResponsiveContainer>
           )}

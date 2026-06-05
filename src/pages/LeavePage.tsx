@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -16,7 +16,7 @@ const STATUS_BADGE = {
 const OTHER_LEAVE_TYPE_MARKER = "__OTHER_LEAVE_TYPE__:";
 const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
 
-function splitLeaveMember(reason = "") {
+function splitLeaveMember(reason: string | null | undefined = "") {
   const lines = String(reason || "").split("\n");
   const markerLine = lines.find((line) => line.startsWith(LEAVE_MEMBER_MARKER));
   if (!markerLine) {
@@ -31,7 +31,7 @@ function splitLeaveMember(reason = "") {
   };
 }
 
-function splitLeaveReason(reason = "") {
+function splitLeaveReason(reason: string | null | undefined = "") {
   const value = splitLeaveMember(reason).reason || "";
   if (!value.startsWith(OTHER_LEAVE_TYPE_MARKER)) {
     return { otherType: "", reason: value };
@@ -51,7 +51,7 @@ function splitLeaveReason(reason = "") {
   };
 }
 
-function buildLeaveReason(type, otherType, reason, memberId, memberName) {
+function buildLeaveReason(type: string, otherType: string, reason: string, memberId: string, memberName: string) {
   const trimmedReason = reason.trim();
   const trimmedOtherType = otherType.trim();
   return [
@@ -71,10 +71,10 @@ export default function LeavePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
-  const [editingRequestId, setEditingRequestId] = useState(null);
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [listError, setListError] = useState("");
-  const [openActionMenuId, setOpenActionMenuId] = useState(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [requestLinkCopied, setRequestLinkCopied] = useState(false);
   const isAdmin = hasManagementAccess(profile?.role);
@@ -103,7 +103,7 @@ export default function LeavePage() {
     if (request) {
       const member = splitLeaveMember(request.reason);
       const { otherType, reason } = splitLeaveReason(request.reason);
-      setEditingRequestId(request.id);
+      setEditingRequestId(request.id ? String(request.id) : null);
       setForm({
         member_id: member.memberId,
         member_name: member.memberName,
@@ -123,8 +123,8 @@ export default function LeavePage() {
       return undefined;
     }
 
-    function handlePointerDown(event) {
-      if (!event.target.closest("[data-leave-actions]")) {
+    function handlePointerDown(event: MouseEvent) {
+      if (!(event.target as HTMLElement).closest("[data-leave-actions]")) {
         setOpenActionMenuId(null);
       }
     }
@@ -225,7 +225,7 @@ export default function LeavePage() {
     }
   }
 
-  async function updateStatus(id, status) {
+  async function updateStatus(id: string, status: string) {
     if (!profile?.id) return;
 
     setListError("");
@@ -238,12 +238,12 @@ export default function LeavePage() {
     await fetchRequests();
   }
 
-  function startEditing(request) {
+  function startEditing(request: LooseRow) {
     setOpenActionMenuId(null);
     navigate(`/leave/${request.id}/edit`);
   }
 
-  async function deleteRequest(request) {
+  async function deleteRequest(request: LooseRow) {
     const isOwnRequest = request.user_id === profile?.id;
     if (!isOwnRequest && !isAdmin) return;
 
@@ -272,7 +272,8 @@ export default function LeavePage() {
     }
   }
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
   const filteredMembers = members.filter((member) => {
     const query = form.member_search.trim().toLowerCase();
     if (!query) return true;
@@ -327,7 +328,7 @@ export default function LeavePage() {
                       onClick={() => {
                         setForm((current) => ({
                           ...current,
-                          member_id: member.id,
+                          member_id: member.id ?? "",
                           member_name: member.full_name || "",
                           member_search: member.full_name || "",
                         }));
@@ -482,15 +483,18 @@ export default function LeavePage() {
           </div>
         ) : (
           requests.map((req) => {
-            const days = differenceInCalendarDays(new Date(req.end_date), new Date(req.start_date)) + 1;
+            const requestKey = String(req.id ?? "");
+            const days = differenceInCalendarDays(new Date(String(req.end_date)), new Date(String(req.start_date))) + 1;
             const leaveMember = splitLeaveMember(req.reason);
             const { otherType, reason } = splitLeaveReason(req.reason);
+            const leaveProfile = req.profiles as { full_name?: string } | undefined;
             const isOwnRequest = req.user_id === profile?.id;
             const canChangeStatus = isOwnRequest || isAdmin;
             const canEdit = isOwnRequest || isAdmin;
             const canDelete = isOwnRequest || isAdmin;
             const isApproved = req.status === "approved";
             const isRejected = req.status === "rejected";
+            const requestStatus = req.status as keyof typeof STATUS_BADGE | undefined;
             const leaveLabel = req.type === "other" && otherType
               ? otherType
               : `${req.type} Leave`;
@@ -502,13 +506,13 @@ export default function LeavePage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-white font-medium capitalize">{leaveLabel}</span>
-                    <span className={`badge ${STATUS_BADGE[req.status] || "badge-blue"}`}>{req.status}</span>
-                    {(leaveMember.memberName || (isAdmin && req.profiles?.full_name)) && (
-                      <span className="text-slate-500 text-xs">— {leaveMember.memberName || req.profiles.full_name}</span>
+                    <span className={`badge ${STATUS_BADGE[requestStatus ?? "pending"] || "badge-blue"}`}>{req.status}</span>
+                    {(leaveMember.memberName || (isAdmin && leaveProfile?.full_name)) && (
+                      <span className="text-slate-500 text-xs">— {leaveMember.memberName || leaveProfile?.full_name}</span>
                     )}
                   </div>
                   <p className="text-slate-400 text-sm">
-                    {format(new Date(req.start_date), "MMM d")} – {format(new Date(req.end_date), "MMM d, yyyy")}
+                    {format(new Date(String(req.start_date)), "MMM d")} – {format(new Date(String(req.end_date)), "MMM d, yyyy")}
                     <span className="text-slate-500 ml-2">({days} day{days > 1 ? "s" : ""})</span>
                   </p>
                   {reason && <p className="text-slate-500 text-xs mt-1">{reason}</p>}
@@ -517,7 +521,11 @@ export default function LeavePage() {
                   {canChangeStatus && (
                     <>
                       <button
-                        onClick={() => updateStatus(req.id, "approved")}
+                        onClick={() => {
+                          if (req.id) {
+                            void updateStatus(String(req.id), "approved");
+                          }
+                        }}
                         className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
                           isApproved
                             ? "border-green-500/40 bg-green-500/20 text-green-300"
@@ -527,7 +535,11 @@ export default function LeavePage() {
                         <Check className="w-3.5 h-3.5" /> Approve
                       </button>
                       <button
-                        onClick={() => updateStatus(req.id, "rejected")}
+                        onClick={() => {
+                          if (req.id) {
+                            void updateStatus(String(req.id), "rejected");
+                          }
+                        }}
                         className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
                           isRejected
                             ? "border-red-500/40 bg-red-500/20 text-red-300"
@@ -542,14 +554,14 @@ export default function LeavePage() {
                     <div data-leave-actions className="relative z-20">
                       <button
                         type="button"
-                        onClick={() => setOpenActionMenuId((currentId) => currentId === req.id ? null : req.id)}
+                        onClick={() => setOpenActionMenuId((currentId) => currentId === requestKey ? null : requestKey)}
                         className="w-10 h-10 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white flex items-center justify-center"
                         aria-label={`Open actions for ${req.type} leave request`}
-                        aria-expanded={openActionMenuId === req.id}
+                        aria-expanded={openActionMenuId === requestKey}
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
-                      {openActionMenuId === req.id && (
+                      {openActionMenuId === requestKey && (
                         <div className="absolute bottom-full right-0 mb-2 z-10 w-36 rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-lg shadow-black/30">
                           {canEdit && (
                             <button

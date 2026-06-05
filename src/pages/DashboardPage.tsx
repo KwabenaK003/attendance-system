@@ -14,6 +14,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
+import type { ComponentType } from "react";
 import {
   Area,
   AreaChart,
@@ -35,7 +36,7 @@ import { loadSystemSettings } from "../lib/systemSettings";
 import { buildMemberActivity, buildPunchActivity, buildPunchSessions, sortTimeActivity } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
 
-const PIE_COLORS = ["#28c7d9", "#fbbf24", "#ff4d6d"];
+const PIE_COLORS = ["#3b82f6", "#f59e0b", "#f43f5e"];
 const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
 
 type ChartTooltipPayload = {
@@ -51,23 +52,38 @@ type ChartTooltipProps = {
   label?: string | number;
 };
 
-function StatCard({ icon: Icon, label, value, sub, color = "accent" }) {
+type StatColor = "accent" | "red" | "yellow" | "blue";
+
+type StatCardProps = {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  sub?: string;
+  color?: StatColor;
+};
+
+type AttendanceSettings = {
+  officialCheckInTime?: string;
+  lateThresholdMinutes?: number | string;
+};
+
+function StatCard({ icon: Icon, label, value, sub, color = "accent" }: StatCardProps) {
   const colors = {
     accent: "text-accent bg-accent/10 border-accent/20",
     red: "text-danger bg-danger/10 border-danger/20",
     yellow: "text-warn bg-warn/10 border-warn/20",
     blue: "text-info bg-info/10 border-info/20",
-  };
+  } satisfies Record<StatColor, string>;
 
   return (
     <div className="stat-card animate-fade-up">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-400">{label}</p>
-          <p className="mt-0.5 font-display text-2xl font-bold text-white">{value}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-2 font-display text-3xl font-semibold text-white">{value}</p>
           {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
         </div>
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${colors[color]}`}>
+        <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${colors[color]}`}>
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -104,7 +120,7 @@ function StatusTooltip({ active, payload = [] }: ChartTooltipProps = {}) {
   );
 }
 
-function formatClockTime(value) {
+function formatClockTime(value?: string | null) {
   if (!value) {
     return "-";
   }
@@ -116,8 +132,8 @@ function formatClockTime(value) {
   }
 }
 
-function isMissingVisitorsTable(error) {
-  const message = error?.message || "";
+function isMissingVisitorsTable(error: unknown) {
+  const message = (error as { message?: string } | null)?.message || "";
   return /visitors/i.test(message) && /(does not exist|not found|relation)/i.test(message);
 }
 
@@ -127,7 +143,7 @@ function getLeaveMemberId(reason = "") {
   return line.slice(LEAVE_MEMBER_MARKER.length).split("|")[0] || "";
 }
 
-function parseTimeToDate(referenceDate, value) {
+function parseTimeToDate(referenceDate: Date, value?: string | null) {
   if (!value || typeof value !== "string" || !value.includes(":")) {
     return referenceDate;
   }
@@ -138,23 +154,30 @@ function parseTimeToDate(referenceDate, value) {
   return date;
 }
 
-function buildTodaySummary(members = [], todayMemberEntries = [], attendanceSettings, now = new Date()) {
+function buildTodaySummary(
+  members: LooseRow[] = [],
+  todayMemberEntries: LooseRow[] = [],
+  attendanceSettings: AttendanceSettings = {},
+  now = new Date()
+) {
   const checkInStart = parseTimeToDate(now, attendanceSettings?.officialCheckInTime || "09:00");
   const lateCutoff = new Date(checkInStart);
   lateCutoff.setMinutes(lateCutoff.getMinutes() + Number(attendanceSettings?.lateThresholdMinutes || 0));
-  const firstEntryByMember = new Map();
+  const firstEntryByMember = new Map<string, LooseRow>();
   for (const entry of todayMemberEntries) {
     if (!entry?.member_id || !entry?.punch_in) {
       continue;
     }
 
     const existing = firstEntryByMember.get(entry.member_id);
-    if (!existing || parseISO(entry.punch_in) < parseISO(existing.punch_in)) {
+    if (!existing?.punch_in || parseISO(entry.punch_in) < parseISO(existing.punch_in)) {
       firstEntryByMember.set(entry.member_id, entry);
     }
   }
 
-  const late = Array.from(firstEntryByMember.values()).filter((entry) => parseISO(entry.punch_in) > lateCutoff).length;
+  const late = Array.from(firstEntryByMember.values()).filter((entry) => (
+    entry.punch_in ? parseISO(entry.punch_in) > lateCutoff : false
+  )).length;
 
   return {
     presentToday: firstEntryByMember.size,
@@ -162,7 +185,7 @@ function buildTodaySummary(members = [], todayMemberEntries = [], attendanceSett
   };
 }
 
-function buildGenderDistribution(members = []) {
+function buildGenderDistribution(members: LooseRow[] = []) {
   const counts = { Male: 0, Female: 0, Unspecified: 0 };
 
   for (const member of members) {
@@ -373,7 +396,7 @@ export default function DashboardPage() {
       const inactiveMemberIds = new Set((leaveRequestsResult.data || []).map((request) => getLeaveMemberId(request.reason)).filter(Boolean));
       const inactiveCount = members.filter((member) => inactiveMemberIds.has(member.id)).length;
       setMemberStatusData([
-        { name: "Active", value: Math.max(members.length - inactiveCount, 0), fill: "#28c7d9" },
+        { name: "Active", value: Math.max(members.length - inactiveCount, 0), fill: "#3b82f6" },
         { name: "Inactive", value: inactiveCount, fill: "#ff4d6d" },
       ]);
       setStatusBreakdown(buildGenderDistribution(members));
@@ -417,30 +440,38 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="animate-fade-up">
-        <h2 className="font-display text-2xl font-bold text-white">Attendance Overview</h2>
-        <p className="mt-1 text-sm text-slate-400">Welcome back. Here is a summary of the attendance overview</p>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="card animate-fade-up overflow-hidden p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-white">Attendance Overview</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              Here is a summary of the Attendance Management
+            </p>
+          </div>
+        </div>
       </div>
 
       {stats.isClockedIn && (
-        <div className="card-glow flex items-center gap-3 p-4 animate-fade-up">
-          <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-accent animate-pulse" />
-          <p className="text-sm font-medium text-accent">You&apos;re currently clocked in</p>
-          <div className="ml-auto">
+        <div className="card-glow flex flex-col gap-3 p-4 animate-fade-up sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3">
+            <div className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-accent animate-pulse" />
+            <p className="text-sm font-semibold text-accent">You&apos;re currently clocked in</p>
+          </div>
+          <div className="sm:ml-auto">
             <a href="/clock" className="btn-primary px-4 py-1.5 text-sm">View Clock</a>
           </div>
         </div>
       )}
 
       {dashboardError && (
-        <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger animate-fade-up">
+        <div className="animate-fade-up rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
           {dashboardError}
         </div>
       )}
 
       {isAdmin && (
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="blue" />
           <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="accent" />
           <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="yellow" />
@@ -449,28 +480,36 @@ export default function DashboardPage() {
       )}
 
       <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
-        <div className="card flex h-full min-h-[320px] flex-col p-5">
-          <h3 className="mb-4 font-display text-white text-lg font-semibold">This Week&apos;s Hours</h3>
+        <div className="card flex h-full min-h-[340px] flex-col p-5">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-display text-lg font-semibold text-white">This Week&apos;s Hours</h3>
+              <p className="mt-1 text-sm text-slate-500">Personal logged hours by day</p>
+            </div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
           <div className="h-[220px] flex-1">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#28c7d9" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#28c7d9" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(138,154,178,0.08)" />
+                <XAxis dataKey="day" tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<HoursTooltip />} />
                 <Area
                   type="monotone"
                   dataKey="hours"
-                  stroke="#28c7d9"
+                  stroke="#3b82f6"
                   strokeWidth={2}
                   fill="url(#hoursGrad)"
-                  dot={{ fill: "#28c7d9", strokeWidth: 0, r: 3 }}
+                  dot={{ fill: "#3b82f6", strokeWidth: 0, r: 3 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -478,16 +517,19 @@ export default function DashboardPage() {
         </div>
 
         {isAdmin && (
-          <div className="card flex h-full min-h-[320px] flex-col p-5">
-            <h3 className="mb-4 font-display text-white text-lg font-semibold">Active vs Inactive Members</h3>
+          <div className="card flex h-full min-h-[340px] flex-col p-5">
+            <div className="mb-5">
+              <h3 className="font-display text-lg font-semibold text-white">Active vs Inactive Members</h3>
+              <p className="mt-1 text-sm text-slate-500">Current membership status</p>
+            </div>
             <div className="h-[220px] flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={memberStatusData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(138,154,178,0.08)" />
+                  <XAxis dataKey="name" tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<StatusTooltip />} />
-                  <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                     {memberStatusData.map((entry) => (
                       <Cell key={entry.name} fill={entry.fill} />
                     ))}
@@ -499,9 +541,10 @@ export default function DashboardPage() {
         )}
 
         {isAdmin && (
-          <div className="card flex h-full min-h-[320px] flex-col p-5">
+          <div className="card flex h-full min-h-[340px] flex-col p-5">
             <div className="mb-4">
               <h3 className="font-display text-lg font-semibold text-white">Gender Distribution</h3>
+              <p className="mt-1 text-sm text-slate-500">Member profile breakdown</p>
             </div>
 
             {loading ? (
@@ -532,7 +575,7 @@ export default function DashboardPage() {
 
                 <div className="mt-4 grid gap-2 grid-cols-3">
                   {statusBreakdown.map((slice) => (
-                    <div key={slice.name} className="rounded-2xl border border-slate-800 bg-slate-950/35 px-3 py-3">
+                    <div key={slice.name} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3">
                       <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.fill }} />
                         <span className="text-xs uppercase tracking-wide text-slate-500">{slice.name}</span>
@@ -547,20 +590,23 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="card p-5">
-        <div className="mb-4">
+      <div className="card overflow-hidden p-5">
+        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
           <h3 className="font-display text-lg font-semibold text-white">Recent Clock In / Out</h3>
           <p className="mt-1 text-sm text-slate-400">
             {isAdmin ? "Latest employee and member clock events." : "Your latest clock events."}
           </p>
+          </div>
+          <span className="badge badge-blue w-fit">{recentClockRows.length} events</span>
         </div>
 
         {recentClockRows.length === 0 ? (
-          <div className="py-8 text-center text-sm text-slate-500">No recent clock events yet.</div>
+          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 py-10 text-center text-sm text-slate-500">No recent clock events yet.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="bg-slate-950/50">
                 <tr className="border-b border-slate-800">
                   <th className="table-header px-4 py-3 text-left">Name</th>
                   <th className="table-header px-4 py-3 text-left">Type</th>
@@ -571,7 +617,7 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {recentClockRows.map((activity) => (
-                  <tr key={activity.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                  <tr key={activity.id} className="border-b border-slate-800/50 transition-colors last:border-0 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-white">{activity.actorLabel || "You"}</td>
                     <td className="px-4 py-3 text-slate-400">{activity.personType || "Employee"}</td>
                     <td className="px-4 py-3">
