@@ -1,70 +1,134 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { differenceInMinutes, differenceInSeconds, format, parseISO } from "date-fns";
 import {
-  Copy,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Loader2,
-  Camera,
-  ScanFace,
-  Search,
-  UserRound,
+  Clock, Copy, CheckCircle, XCircle, AlertCircle,
+  Loader2, Camera, ScanFace, Search, UserRound,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { supabase } from "../lib/supabase";
 import { getDeviceMetadata, getNetworkMetadata, getPublicIpAddress } from "../lib/clockMetadata";
-import { compareFaceReferences, captureVideoFrame, createFaceReference, normalizeFaceReference, waitForVideoReady } from "../lib/faceVerification";
+import {
+  compareFaceReferences,
+  captureVideoFrame,
+  createFaceReference,
+  normalizeFaceReference,
+  waitForVideoReady,
+} from "../lib/faceVerification";
 import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
+import { resolveClockStatus, markExpiredSession } from "../lib/dailyClockReset";
 
-type ClockMessage = {
-  type: "success" | "error";
+// ─── Domain types ─────────────────────────────────────────────────────────────
+
+type PersonKind = "staff" | "member";
+
+interface Person {
+  id: string;
+  kind: PersonKind;
+  full_name: string | null;
+  role: string | null;
+  department: string | null;
+  face_reference: string | null;
+}
+
+/** Raw row from `punches` (staff). */
+interface StaffPunch {
+  id: string;
+  user_id: string;
+  type: "in" | "out";
+  timestamp: string;
+  note: string | null;
+  location_name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/** Raw row from `member_entries`. */
+interface MemberEntry {
+  id: string;
+  member_id: string;
+  punch_in: string;
+  punch_out: string | null;
+  hours: number | null;
+  note: string | null;
+}
+
+/** The open record held in state — either kind depending on the person. */
+type ActiveRecord = StaffPunch | MemberEntry;
+
+type MessageType = "success" | "error";
+
+interface StatusMessage {
+  type: MessageType;
   text: string;
-};
+}
 
-type ClockPageProps = {
+interface PunchNoteParams {
+  person: Person;
+  similarity: number | null;
+  locationName: string | null;
+  deviceName: string | null;
+  networkName: string | null;
+  ipAddress: string | null;
+}
+
+interface InsertPunchPayload {
+  user_id: string;
+  type: "in" | "out";
+  timestamp: string;
+  latitude: number | null;
+  longitude: number | null;
+  location_name: string | null;
+  device_name: string | null;
+  ip_address: string | null;
+  network_name: string | null;
+  verification_method: string;
+  note: string;
+}
+
+interface InsertPunchResult {
+  usedFallbackColumns: boolean;
+}
+
+interface ClockPageProps {
   standalone?: boolean;
-};
+}
 
-type ClockUserProfile = {
-  id?: string | null;
-  full_name?: string | null;
-  role?: string | null;
-  department?: string | null;
-  face_reference?: unknown;
-};
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-type PersonType = LooseRow & {
-  kind?: "staff" | "member";
-};
-
-function LiveClock() {
-  const [time, setTime] = useState(new Date());
+function LiveClock(): JSX.Element {
+  const [time, setTime] = useState<Date>(new Date());
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
   }, []);
 
   return (
     <div className="text-center">
-      <p className="font-mono text-5xl font-semibold tracking-tight text-white tabular-nums sm:text-6xl">
+      <p className="font-mono font-bold text-6xl text-white tracking-tight tabular-nums">
         {format(time, "HH:mm:ss")}
       </p>
-      <p className="mt-2 text-sm font-medium text-slate-500">{format(time, "EEEE, MMMM d, yyyy")}</p>
+      <p className="text-slate-400 mt-2 font-body">{format(time, "EEEE, MMMM d, yyyy")}</p>
     </div>
   );
 }
 
-function ElapsedTimer({ since }: { since: string }) {
-  const [elapsed, setElapsed] = useState(0);
+interface ElapsedTimerProps {
+  since: string; // ISO timestamp
+}
+
+function ElapsedTimer({ since }: ElapsedTimerProps): JSX.Element {
+  const [elapsed, setElapsed] = useState<number>(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setElapsed(differenceInSeconds(new Date(), parseISO(since))), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(
+      () => setElapsed(differenceInSeconds(new Date(), parseISO(since))),
+      1000
+    );
+    return () => clearInterval(t);
   }, [since]);
 
   const h = Math.floor(elapsed / 3600);
@@ -78,160 +142,31 @@ function ElapsedTimer({ since }: { since: string }) {
   );
 }
 
-function buildFallbackEmployee(profile: LooseRow | ClockUserProfile | null | undefined): PersonType | null {
-  if (!profile?.id) {
-    return null;
-  }
-
-  return {
-    id: profile.id,
-    kind: "staff",
-    full_name: profile.full_name || "Current User",
-    role: profile.role || "employee",
-    department: profile.department || "",
-    face_reference: profile.face_reference || null,
-  };
+interface SearchResultButtonProps {
+  person: Person;
+  onSelect: (person: Person) => void;
 }
 
-function normalizeStaffMember(employee: LooseRow): PersonType {
-  return {
-    ...employee,
-    kind: "staff",
-  };
-}
-
-function normalizeMember(member: LooseRow): PersonType {
-  return {
-    ...member,
-    kind: "member",
-    role: member.role || "employee",
-  };
-}
-
-function buildPersonKey(person: PersonType | null | undefined): string {
-  return person?.id ? `${person.kind}:${person.id}` : "";
-}
-
-function getPersonTypeLabel(person?: PersonType): string {
-  return person?.kind === "member" ? "Member" : "Employee";
-}
-
-function sortPeople(people: PersonType[]): PersonType[] {
-  return [...people].sort((left, right) => {
-    const leftName = left.full_name?.trim()?.toLowerCase() || "";
-    const rightName = right.full_name?.trim()?.toLowerCase() || "";
-    return leftName.localeCompare(rightName);
-  });
-}
-
-function mergeEmployees(employees: LooseRow[], currentProfile?: LooseRow | ClockUserProfile | null): PersonType[] {
-  const merged = new Map<string, PersonType>();
-
-  for (const employee of employees || []) {
-    if (employee?.id) {
-      merged.set(employee.id, normalizeStaffMember(employee));
-    }
-  }
-
-  const fallbackEmployee = buildFallbackEmployee(currentProfile);
-  if (fallbackEmployee?.id) {
-    merged.set(fallbackEmployee.id, {
-      ...merged.get(fallbackEmployee.id),
-      ...fallbackEmployee,
-    });
-  }
-
-  return sortPeople(Array.from(merged.values()));
-}
-
-function buildPunchNote({
-  person,
-  similarity,
-  locationName,
-  deviceName,
-  networkName,
-  ipAddress,
-}: {
-  person: PersonType;
-  similarity?: number;
-  locationName?: string | null;
-  deviceName?: string | null;
-  networkName?: string | null;
-  ipAddress?: string | null;
-}) {
-  const parts = [
-    "Method: Face Clock",
-    `${getPersonTypeLabel(person)}: ${person.full_name || "Unknown"}`,
-  ];
-
-  if (person.role) {
-    parts.push(`Role: ${getRoleLabel(person.role)}`);
-  }
-
-  if (typeof similarity === "number") {
-    parts.push(`Face match: ${Math.round(similarity * 100)}%`);
-  }
-
-  if (locationName) {
-    parts.push(`Location: ${locationName}`);
-  }
-
-  if (deviceName) {
-    parts.push(`Device: ${deviceName}`);
-  }
-
-  if (networkName) {
-    parts.push(`Network: ${networkName}`);
-  }
-
-  if (ipAddress) {
-    parts.push(`IP: ${ipAddress}`);
-  }
-
-  return parts.join(" | ");
-}
-
-async function insertPunchRecord(payload: Record<string, unknown>) {
-  const insertAttempt = await supabase.from("punches").insert(payload);
-  if (!insertAttempt.error) {
-    return { usedFallbackColumns: false };
-  }
-
-  const errorMessage = insertAttempt.error.message || "";
-  if (!/(device_name|ip_address|verification_method|network_name)/i.test(errorMessage)) {
-    throw insertAttempt.error;
-  }
-
-  const fallbackPayload = { ...payload };
-  delete fallbackPayload.device_name;
-  delete fallbackPayload.ip_address;
-  delete fallbackPayload.verification_method;
-  delete fallbackPayload.network_name;
-
-  const fallbackAttempt = await supabase.from("punches").insert(fallbackPayload);
-  if (fallbackAttempt.error) {
-    throw fallbackAttempt.error;
-  }
-
-  return { usedFallbackColumns: true };
-}
-
-function SearchResultButton({ person, onSelect }: { person: PersonType; onSelect: (person: PersonType) => void }) {
+function SearchResultButton({ person, onSelect }: SearchResultButtonProps): JSX.Element {
   return (
     <button
       type="button"
       onClick={() => onSelect(person)}
-      className="w-full rounded-xl border border-slate-800 bg-slate-900/75 px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-slate-900"
+      className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-left transition-colors hover:border-accent/40 hover:bg-slate-900"
     >
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+        <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
           <UserRound className="w-4 h-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-white font-medium truncate">{person.full_name || "Unknown person"}</p>
-            <span className={`badge text-[10px] uppercase tracking-wide ${person.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
-              {getPersonTypeLabel(person)}
+            <p className="text-white font-medium truncate">{person.full_name ?? "Unknown"}</p>
+            <span
+              className={`badge text-[10px] uppercase tracking-wide ${
+                person.kind === "member" ? "badge-yellow" : "badge-blue"
+              }`}
+            >
+              {person.kind === "member" ? "Member" : "Employee"}
             </span>
           </div>
           <p className="text-slate-500 text-xs">
@@ -244,178 +179,271 @@ function SearchResultButton({ person, onSelect }: { person: PersonType; onSelect
   );
 }
 
-export default function ClockPage({ standalone = false }: ClockPageProps) {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildFallbackEmployee(profile: Person | null): Person | null {
+  if (!profile?.id) return null;
+  return {
+    id: profile.id,
+    kind: "staff",
+    full_name: profile.full_name ?? "Current User",
+    role: profile.role ?? "employee",
+    department: profile.department ?? "",
+    face_reference: profile.face_reference ?? null,
+  };
+}
+
+function normalizeStaffMember(e: Omit<Person, "kind">): Person {
+  return { ...e, kind: "staff" };
+}
+
+function normalizeMember(m: Omit<Person, "kind" | "role"> & { role?: string | null }): Person {
+  return { ...m, kind: "member", role: m.role ?? "employee" };
+}
+
+function buildPersonKey(p: Person | null): string {
+  return p?.id ? `${p.kind}:${p.id}` : "";
+}
+
+function sortPeople(arr: Person[]): Person[] {
+  return [...arr].sort((a, b) =>
+    (a.full_name?.trim().toLowerCase() ?? "").localeCompare(
+      b.full_name?.trim().toLowerCase() ?? ""
+    )
+  );
+}
+
+function mergeEmployees(employees: Person[], currentProfile: Person | null): Person[] {
+  const merged = new Map<string, Person>();
+  for (const e of employees ?? []) {
+    if (e?.id) merged.set(e.id, normalizeStaffMember(e));
+  }
+  const fb = buildFallbackEmployee(currentProfile);
+  if (fb?.id) merged.set(fb.id, { ...merged.get(fb.id), ...fb } as Person);
+  return sortPeople(Array.from(merged.values()));
+}
+
+function buildPunchNote({
+  person,
+  similarity,
+  locationName,
+  deviceName,
+  networkName,
+  ipAddress,
+}: PunchNoteParams): string {
+  const parts: string[] = [
+    "Method: Face Clock",
+    `${person.kind === "member" ? "Member" : "Employee"}: ${person.full_name ?? "Unknown"}`,
+  ];
+  if (person.role) parts.push(`Role: ${getRoleLabel(person.role)}`);
+  if (typeof similarity === "number") parts.push(`Face match: ${Math.round(similarity * 100)}%`);
+  if (locationName) parts.push(`Location: ${locationName}`);
+  if (deviceName)   parts.push(`Device: ${deviceName}`);
+  if (networkName)  parts.push(`Network: ${networkName}`);
+  if (ipAddress)    parts.push(`IP: ${ipAddress}`);
+  return parts.join(" | ");
+}
+
+async function insertPunchRecord(
+  payload: InsertPunchPayload
+): Promise<InsertPunchResult> {
+  const first = await supabase.from("punches").insert(payload);
+  if (!first.error) return { usedFallbackColumns: false };
+
+  const msg = first.error.message ?? "";
+  if (!/(device_name|ip_address|verification_method|network_name)/i.test(msg)) {
+    throw first.error;
+  }
+
+  // Retry without the extended columns that may not exist in older schemas
+  const {
+    device_name: _d,
+    ip_address: _i,
+    verification_method: _v,
+    network_name: _n,
+    ...fallback
+  } = payload;
+
+  const second = await supabase.from("punches").insert(fallback);
+  if (second.error) throw second.error;
+  return { usedFallbackColumns: true };
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function ClockPage({ standalone = false }: ClockPageProps): JSX.Element {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const videoRef  = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [staffEmployees, setStaffEmployees] = useState<PersonType[]>([]);
-  const [members, setMembers] = useState<PersonType[]>([]);
-  const [peopleLoading, setPeopleLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedPersonKey, setSelectedPersonKey] = useState("");
-  const [status, setStatus] = useState<LooseRow | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<ClockMessage | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false);
-  const [faceBusy, setFaceBusy] = useState(false);
-  const [facePreview, setFacePreview] = useState<string | null>(null);
-  const [stationLinkCopied, setStationLinkCopied] = useState(false);
 
-  const people = sortPeople([...staffEmployees, ...members]);
-  const selfPerson = buildFallbackEmployee(profile);
-  const selectedPerson = standalone
-    ? people.find((person) => buildPersonKey(person) === selectedPersonKey) || null
+  const [staffEmployees, setStaffEmployees] = useState<Person[]>([]);
+  const [members, setMembers]               = useState<Person[]>([]);
+  const [peopleLoading, setPeopleLoading]   = useState<boolean>(false);
+  const [searchTerm, setSearchTerm]         = useState<string>("");
+  const [selectedPersonKey, setSelectedPersonKey] = useState<string>("");
+  const [status, setStatus]                 = useState<ActiveRecord | null>(null);
+  const [loading, setLoading]               = useState<boolean>(false);
+  const [message, setMessage]               = useState<StatusMessage | null>(null);
+  const [cameraOpen, setCameraOpen]         = useState<boolean>(false);
+  const [cameraReady, setCameraReady]       = useState<boolean>(false);
+  const [faceBusy, setFaceBusy]             = useState<boolean>(false);
+  const [facePreview, setFacePreview]       = useState<string | null>(null);
+  const [stationLinkCopied, setStationLinkCopied] = useState<boolean>(false);
+
+  const people         = sortPeople([...staffEmployees, ...members]);
+  const selfPerson     = buildFallbackEmployee(profile);
+  const selectedPerson: Person | null = standalone
+    ? (people.find((p) => buildPersonKey(p) === selectedPersonKey) ?? null)
     : selfPerson;
-  const isManagementUser = hasManagementAccess(profile?.role);
-  const selectedFaceReference = normalizeFaceReference(
-    selectedPerson?.face_reference || (selectedPerson?.kind === "staff" && selectedPerson.id === profile?.id ? profile?.face_reference : null)
+  const isManagementUser       = hasManagementAccess(profile?.role);
+  const selectedFaceReference  = normalizeFaceReference(
+    selectedPerson?.face_reference ??
+    (selectedPerson?.kind === "staff" && selectedPerson.id === profile?.id
+      ? profile?.face_reference
+      : null)
   );
-  const isClockedIn = Boolean(status);
-  const actionLabel = isClockedIn ? "Clock Out" : "Clock In";
+  const isClockedIn     = Boolean(status);
+  const actionLabel     = isClockedIn ? "Clock Out" : "Clock In";
   const normalizedQuery = searchTerm.trim().toLowerCase();
-  const searchResults = normalizedQuery
-    ? people.filter((person) => {
-      const searchText = [
-        person.full_name || "",
-        person.department || "",
-        getRoleLabel(person.role),
-      ].join(" ").toLowerCase();
-
-      return searchText.includes(normalizedQuery);
-    })
+  const searchResults   = normalizedQuery
+    ? people.filter((p) =>
+        [p.full_name ?? "", p.department ?? "", getRoleLabel(p.role)]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery)
+      )
     : [];
-  const showSearchResults = Boolean(normalizedQuery)
-    && normalizedQuery !== (selectedPerson?.full_name?.trim()?.toLowerCase() || "");
+  const showSearchResults =
+    Boolean(normalizedQuery) &&
+    normalizedQuery !== (selectedPerson?.full_name?.trim().toLowerCase() ?? "");
   const stationUrl = buildShareUrl("/clock/station");
 
+  // Station link copy reset
   useEffect(() => {
-    if (!stationLinkCopied) {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => setStationLinkCopied(false), 2200);
-    return () => window.clearTimeout(timeoutId);
+    if (!stationLinkCopied) return;
+    const t = window.setTimeout(() => setStationLinkCopied(false), 2200);
+    return () => window.clearTimeout(t);
   }, [stationLinkCopied]);
 
+  // Merge current profile into staff list
   useEffect(() => {
-    setStaffEmployees((currentEmployees) => mergeEmployees(currentEmployees, profile));
+    setStaffEmployees((cur) => mergeEmployees(cur, profile));
   }, [profile]);
 
+  // Load all people in standalone / kiosk mode
   useEffect(() => {
-    if (standalone) {
-      void loadPeople();
-    }
+    if (standalone) void loadPeople();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, standalone]);
 
+  // Fetch clock status whenever person or auth changes
   useEffect(() => {
     void fetchStatus(selectedPerson);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, profile?.face_reference, selectedPersonKey, staffEmployees, members, standalone]);
 
-  useEffect(() => {
-    return () => {
-      stopFaceCamera();
-    };
-  }, []);
+  // Camera cleanup on unmount
+  useEffect(() => () => stopFaceCamera(), []);
 
+  // Attach stream to video element once camera is open
   useEffect(() => {
-    if (!cameraOpen || !streamRef.current || !videoRef.current) {
-      return undefined;
-    }
-
+    if (!cameraOpen || !streamRef.current || !videoRef.current) return;
     let cancelled = false;
-    const videoElement = videoRef.current;
+    const video  = videoRef.current;
     const stream = streamRef.current;
 
-    async function attachStream() {
+    async function attach(): Promise<void> {
       try {
-        videoElement.srcObject = stream;
-        await videoElement.play();
-        await waitForVideoReady(videoElement);
-
-        if (!cancelled && streamRef.current === stream) {
-          setCameraReady(true);
-        }
+        video.srcObject = stream;
+        await video.play();
+        await waitForVideoReady(video);
+        if (!cancelled && streamRef.current === stream) setCameraReady(true);
       } catch (err) {
         if (!cancelled) {
           stopFaceCamera();
-          setMessage({ type: "error", text: (err as Error).message || "Unable to start the camera preview" });
+          setMessage({
+            type: "error",
+            text: (err as Error).message || "Unable to start camera preview",
+          });
         }
       }
     }
 
-    void attachStream();
-
-    return () => {
-      cancelled = true;
-    };
+    void attach();
+    return () => { cancelled = true; };
   }, [cameraOpen]);
 
-  async function loadPeople() {
+  // ── Data loaders ─────────────────────────────────────────────
+
+  async function loadPeople(): Promise<void> {
     if (!profile?.id) {
       setStaffEmployees([]);
       setMembers([]);
       setSelectedPersonKey("");
       return;
     }
-
     setPeopleLoading(true);
-
     try {
       const [staffResult, membersResult] = await Promise.allSettled([
         supabase.from("profiles").select("*").order("full_name"),
-        supabase.from("members").select("id, full_name, role, department, face_reference").order("full_name"),
+        supabase
+          .from("members")
+          .select("id, full_name, role, department, face_reference")
+          .order("full_name"),
       ]);
 
-      let nextStaffEmployees = mergeEmployees([], profile);
-      let nextMembers: PersonType[] = [];
-      const errors: string[] = [];
+      let nextStaff: Person[]   = mergeEmployees([], profile);
+      let nextMembers: Person[] = [];
+      const errors: string[]    = [];
 
       if (staffResult.status === "fulfilled") {
         if (staffResult.value.error) {
-          errors.push(staffResult.value.error.message || "Unable to load employees.");
+          errors.push(staffResult.value.error.message);
         } else {
-          nextStaffEmployees = mergeEmployees(staffResult.value.data || [], profile);
+          nextStaff = mergeEmployees(staffResult.value.data ?? [], profile);
         }
       } else {
-        errors.push(staffResult.reason?.message || "Unable to load employees.");
+        errors.push((staffResult.reason as Error)?.message || "Unable to load employees.");
       }
 
       if (membersResult.status === "fulfilled") {
         if (membersResult.value.error) {
-          errors.push(membersResult.value.error.message || "Unable to load members.");
+          errors.push(membersResult.value.error.message);
         } else {
-          nextMembers = sortPeople((membersResult.value.data || []).map(normalizeMember));
+          nextMembers = sortPeople((membersResult.value.data ?? []).map(normalizeMember));
         }
       } else {
-        errors.push(membersResult.reason?.message || "Unable to load members.");
+        errors.push((membersResult.reason as Error)?.message || "Unable to load members.");
       }
 
-      setStaffEmployees(nextStaffEmployees);
+      setStaffEmployees(nextStaff);
       setMembers(nextMembers);
 
       if (selectedPersonKey) {
-        const nextPeople = sortPeople([...nextStaffEmployees, ...nextMembers]);
-        const selectionStillExists = nextPeople.some((person) => buildPersonKey(person) === selectedPersonKey);
-        if (!selectionStillExists) {
+        const allPeople = sortPeople([...nextStaff, ...nextMembers]);
+        if (!allPeople.some((p) => buildPersonKey(p) === selectedPersonKey)) {
           setSelectedPersonKey("");
         }
       }
 
-      if (errors.length) {
-        setMessage({ type: "error", text: errors.join(" ") });
-      }
+      if (errors.length) setMessage({ type: "error", text: errors.join(" ") });
     } finally {
       setPeopleLoading(false);
     }
   }
 
-  async function fetchStatus(person: PersonType | null) {
-    if (!person?.id) {
-      setStatus(null);
-      return;
-    }
+  /**
+   * Fetches the last record for a person and resolves today's clock status.
+   *
+   * Key logic:
+   *  - If the last open record is from a PREVIOUS calendar day, the person
+   *    did not clock out. We mark the record as expired in the DB and treat
+   *    the person as NOT clocked in for today.
+   */
+  async function fetchStatus(person: Person | null): Promise<void> {
+    if (!person?.id) { setStatus(null); return; }
 
     if (person.kind === "member") {
       const { data, error } = await supabase
@@ -430,11 +458,18 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         return;
       }
 
-      const lastEntry = data?.[0];
-      setStatus(lastEntry && !lastEntry.punch_out ? lastEntry : null);
+      const lastEntry = (data?.[0] as MemberEntry) ?? null;
+      const resolved  = resolveClockStatus(lastEntry, "member");
+
+      if (resolved.expired) {
+        void markExpiredSession(supabase, resolved.expiredRecord, "member");
+      }
+
+      setStatus(resolved.isClockedIn ? (resolved.status as ActiveRecord) : null);
       return;
     }
 
+    // Staff — punches table
     const { data, error } = await supabase
       .from("punches")
       .select("*")
@@ -447,51 +482,58 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       return;
     }
 
-    const lastPunch = data?.[0];
-    setStatus(lastPunch?.type === "in" ? lastPunch : null);
-  }
+    const lastPunch = (data?.[0] as StaffPunch) ?? null;
+    const resolved  = resolveClockStatus(lastPunch, "staff");
 
-  function runPersonSearch() {
-    if (!normalizedQuery) {
-      setMessage({ type: "error", text: "Enter a name to search for an employee or member." });
-      return;
+    if (resolved.expired) {
+      void markExpiredSession(supabase, resolved.expiredRecord, "staff");
     }
 
+    setStatus(resolved.isClockedIn ? (resolved.status as ActiveRecord) : null);
+  }
+
+  // ── UI actions ────────────────────────────────────────────────
+
+  function runPersonSearch(): void {
+    if (!normalizedQuery) {
+      setMessage({ type: "error", text: "Enter a name to search." });
+      return;
+    }
     if (searchResults.length === 1) {
       handleSelectPerson(searchResults[0]);
       return;
     }
-
-    setMessage(searchResults.length ? null : { type: "error", text: `No employee or member found for "${searchTerm.trim()}".` });
+    setMessage(
+      searchResults.length
+        ? null
+        : { type: "error", text: `No result for "${searchTerm.trim()}".` }
+    );
   }
 
-  function handleSelectPerson(person: PersonType) {
+  function handleSelectPerson(person: Person): void {
     setSelectedPersonKey(buildPersonKey(person));
-    setSearchTerm(person.full_name || "");
+    setSearchTerm(person.full_name ?? "");
     setFacePreview(null);
     setMessage(null);
     stopFaceCamera();
   }
 
-  async function startFaceCamera() {
+  async function startFaceCamera(): Promise<void> {
     setFaceBusy(true);
     setMessage(null);
-
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("This browser does not support camera capture");
       }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } },
         audio: false,
       });
-
       streamRef.current = stream;
       setCameraOpen(true);
       setCameraReady(false);
     } catch (err) {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       setMessage({ type: "error", text: (err as Error).message || "Unable to access the camera" });
     } finally {
@@ -499,91 +541,92 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
   }
 
-  function stopFaceCamera() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+  function stopFaceCamera(): void {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setCameraOpen(false);
     setCameraReady(false);
   }
 
-  async function recordPunch({ person, similarity }: { person: PersonType; similarity?: number }) {
+  async function recordPunch({
+    person,
+    similarity,
+  }: {
+    person: Person;
+    similarity: number | null;
+  }): Promise<void> {
     if (!person?.id) {
       setMessage({ type: "error", text: "Select a person before clocking." });
       return;
     }
-
     setLoading(true);
     setMessage(null);
-
     try {
-      const [locationResult, ipResult] = await Promise.allSettled([
+      const [locResult, ipResult] = await Promise.allSettled([
         getLocation(),
         getPublicIpAddress(),
       ]);
-
-      const location = locationResult.status === "fulfilled" ? locationResult.value : null;
-      const ipAddress = ipResult.status === "fulfilled" ? ipResult.value : null;
-      const device = getDeviceMetadata();
-      const network = getNetworkMetadata();
-      const type = status ? "out" : "in";
+      const location  = locResult.status === "fulfilled" ? locResult.value : null;
+      const ipAddress = ipResult.status === "fulfilled" ? (ipResult.value as string | null) : null;
+      const device    = getDeviceMetadata();
+      const network   = getNetworkMetadata();
+      const type: "in" | "out" = status ? "out" : "in";
       const note = buildPunchNote({
         person,
         similarity,
-        locationName: location?.location_name || null,
-        deviceName: device.deviceName,
-        networkName: network.networkName,
-        ipAddress: ipAddress || null,
+        locationName: (location as { location_name?: string } | null)?.location_name ?? null,
+        deviceName:   device.deviceName,
+        networkName:  network.networkName,
+        ipAddress:    ipAddress ?? null,
       });
 
       if (person.kind === "member") {
-        if (status?.id) {
-          const now = new Date();
-          const punchIn = typeof status.punch_in === "string" ? status.punch_in : now.toISOString();
-          const hours = differenceInMinutes(now, parseISO(punchIn)) / 60;
-          const { error } = await supabase.from("member_entries").update({
-            punch_out: now.toISOString(),
-            hours: parseFloat(hours.toFixed(2)),
-            note,
-          }).eq("id", status.id);
-
-          if (error) {
-            throw error;
-          }
+        const activeEntry = status as MemberEntry | null;
+        if (activeEntry?.id) {
+          // Clock out
+          const now   = new Date();
+          const hours = differenceInMinutes(now, parseISO(activeEntry.punch_in)) / 60;
+          const { error } = await supabase
+            .from("member_entries")
+            .update({
+              punch_out: now.toISOString(),
+              hours: parseFloat(hours.toFixed(2)),
+              note,
+            })
+            .eq("id", activeEntry.id);
+          if (error) throw error;
         } else {
+          // Clock in
           const { error } = await supabase.from("member_entries").insert({
-            member_id: person.id,
-            punch_in: new Date().toISOString(),
-            latitude: location?.latitude || null,
-            longitude: location?.longitude || null,
-            location_name: location?.location_name || null,
+            member_id:     person.id,
+            punch_in:      new Date().toISOString(),
+            latitude:      (location as { latitude?: number } | null)?.latitude ?? null,
+            longitude:     (location as { longitude?: number } | null)?.longitude ?? null,
+            location_name: (location as { location_name?: string } | null)?.location_name ?? null,
             note,
-            created_by: profile?.id || null,
+            created_by:    profile?.id ?? null,
           });
-
-          if (error) {
-            throw error;
-          }
+          if (error) throw error;
         }
       } else {
-        const insertResult = await insertPunchRecord({
-          user_id: person.id,
+        const result = await insertPunchRecord({
+          user_id:             person.id,
           type,
-          timestamp: new Date().toISOString(),
-          latitude: location?.latitude || null,
-          longitude: location?.longitude || null,
-          location_name: location?.location_name || null,
-          device_name: device.deviceName,
-          ip_address: ipAddress || null,
-          network_name: network.networkName,
+          timestamp:           new Date().toISOString(),
+          latitude:            (location as { latitude?: number } | null)?.latitude ?? null,
+          longitude:           (location as { longitude?: number } | null)?.longitude ?? null,
+          location_name:       (location as { location_name?: string } | null)?.location_name ?? null,
+          device_name:         device.deviceName,
+          ip_address:          ipAddress ?? null,
+          network_name:        network.networkName,
           verification_method: "face_clock",
           note,
         });
-
         setMessage({
           type: "success",
-          text: insertResult.usedFallbackColumns
-            ? `${person.full_name || "Employee"} successfully clocked ${type}. Device, network, and IP were saved in the punch note; run supabase/enable_shared_face_clock.sql to add dedicated columns.`
-            : `${person.full_name || "Employee"} successfully clocked ${type}.`,
+          text: result.usedFallbackColumns
+            ? `${person.full_name ?? "Employee"} clocked ${type}. Device/network saved in note.`
+            : `${person.full_name ?? "Employee"} successfully clocked ${type}.`,
         });
       }
 
@@ -593,7 +636,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       if (person.kind === "member") {
         setMessage({
           type: "success",
-          text: `${person.full_name || "Member"} successfully clocked ${type}.`,
+          text: `${person.full_name ?? "Member"} successfully clocked ${type}.`,
         });
       }
     } catch (err) {
@@ -603,54 +646,41 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
   }
 
-  async function handleFacePunch() {
+  async function handleFacePunch(): Promise<void> {
     if (!selectedPerson?.id) {
       setMessage({ type: "error", text: "Search for and select an employee or member first." });
       return;
     }
-
     if (!selectedFaceReference) {
       setMessage({
         type: "error",
-        text: selectedPerson.kind === "staff" && selectedPerson.id === profile?.id
-          ? "Enroll your face in Settings before using the face clock."
-          : `${selectedPerson.full_name || "This person"} does not have a saved face enrollment yet.`,
+        text:
+          selectedPerson.kind === "staff" && selectedPerson.id === profile?.id
+            ? "Enroll your face in Settings before using the face clock."
+            : `${selectedPerson.full_name ?? "This person"} does not have a saved face enrollment yet.`,
       });
       return;
     }
-
-    if (!cameraOpen) {
-      await startFaceCamera();
-      return;
-    }
-
+    if (!cameraOpen) { await startFaceCamera(); return; }
     if (!cameraReady) {
-      setMessage({ type: "error", text: "Camera is still preparing. Please wait a moment and try again." });
+      setMessage({ type: "error", text: "Camera is still preparing. Please wait." });
       return;
     }
-
     setFaceBusy(true);
     setMessage(null);
-
     try {
-      if (!videoRef.current) {
-        throw new Error("Camera is not available for face capture.");
-      }
-      const photo = captureVideoFrame(videoRef.current);
-      const liveReference = await createFaceReference(photo);
-      const comparison = compareFaceReferences(selectedFaceReference, liveReference);
-
+      const video = videoRef.current;
+      if (!video) throw new Error("Camera element not found.");
+      const photo      = captureVideoFrame(video);
+      const liveRef    = await createFaceReference(photo);
+      const comparison = compareFaceReferences(selectedFaceReference, liveRef);
       setFacePreview(photo);
-
       if (!comparison.matched) {
-        throw new Error(`Face verification failed for ${selectedPerson.full_name || "the selected person"}. Match confidence was ${Math.round(comparison.similarity * 100)}%.`);
+        throw new Error(
+          `Face verification failed. Match: ${Math.round(comparison.similarity * 100)}%.`
+        );
       }
-
-      await recordPunch({
-        person: selectedPerson,
-        similarity: comparison.similarity,
-      });
-
+      await recordPunch({ person: selectedPerson, similarity: comparison.similarity });
       stopFaceCamera();
     } catch (err) {
       setMessage({ type: "error", text: (err as Error).message || "Failed to verify face" });
@@ -659,53 +689,88 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
   }
 
-  async function copyStationLink() {
+  async function copyStationLink(): Promise<void> {
     try {
       await copyTextToClipboard(stationUrl);
       setStationLinkCopied(true);
-    } catch (error) {
-      setMessage({ type: "error", text: (error as Error).message || "Unable to copy the shared clock link." });
+    } catch (err) {
+      setMessage({ type: "error", text: (err as Error).message || "Unable to copy link." });
     }
   }
 
+  // ── Render ────────────────────────────────────────────────────
+
   return (
-    <div className={`mx-auto space-y-6 ${standalone ? "max-w-6xl px-4 py-6 sm:px-6" : "max-w-6xl"}`}>
-      <div className="card animate-fade-up p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <h2 className="font-display text-3xl font-semibold text-white">Time Clock</h2>
-          {!standalone && isManagementUser && (
-            <button type="button" onClick={copyStationLink} className="btn-primary flex items-center justify-center gap-2">
-              <Copy className="w-4 h-4" />
-              {stationLinkCopied ? "Copied" : "Copy Link"}
-            </button>
-          )}
-        </div>
+    <div
+      className={`mx-auto space-y-6 ${
+        standalone ? "max-w-5xl px-4 py-6 sm:px-6" : "max-w-4xl"
+      }`}
+    >
+      <div className="animate-fade-up">
+        <h2 className="font-display font-bold text-2xl text-white">Time Clock</h2>
+        <p className="text-slate-400 text-sm mt-1">
+          {standalone
+            ? "Select an employee or member then complete face verification to record the punch."
+            : "Complete face verification to record your own clock-in or clock-out."}
+        </p>
       </div>
 
-      <div className="grid gap-6">
-        <section className="card animate-fade-up p-5 sm:p-6">
+      {/* Station link for management */}
+      {!standalone && isManagementUser && (
+        <div className="card p-5 animate-fade-up border-accent/20">
+          <button type="button" onClick={copyStationLink} className="btn-primary">
+            <Copy className="w-4 h-4" />
+            {stationLinkCopied ? "Copied" : "Copy Kiosk Link"}
+          </button>
+        </div>
+      )}
 
+      <div className="card p-8 text-center animate-fade-up">
+        <LiveClock />
+
+        {/* Status ring */}
+        <div className="flex justify-center mt-8 mb-6">
+          <div
+            className={`relative w-32 h-32 rounded-full flex items-center justify-center ${
+              isClockedIn
+                ? "bg-accent/10 border-2 border-accent clock-ring"
+                : "bg-slate-800 border-2 border-slate-700"
+            }`}
+          >
+            <Clock className={`w-10 h-10 ${isClockedIn ? "text-accent" : "text-slate-500"}`} />
+            {isClockedIn && (
+              <div className="absolute -inset-1 rounded-full border border-accent/20 animate-ping" />
+            )}
+          </div>
+        </div>
+
+        {/* Daily reset notice */}
+        <p className="text-xs text-slate-500 mb-6">
+          Clock runs on a{" "}
+          <span className="text-slate-400 font-medium">24-hour daily cycle</span> (midnight reset).
+          If you do not clock out before midnight, your record will be marked as{" "}
+          <span className="text-warn font-medium">Did not clock out</span>.
+        </p>
+
+        {/* Person search (standalone/kiosk) */}
         {standalone && (
-          <div className="mb-6 space-y-4 text-left">
+          <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
             <div>
               <label className="label">Search Employee or Member</label>
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex gap-3">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
                   <input
                     className="input pl-10"
                     value={searchTerm}
-                    onChange={(event) => {
-                      setSearchTerm(event.target.value);
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      setSearchTerm(e.target.value);
                       setMessage(null);
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        runPersonSearch();
-                      }
+                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                      if (e.key === "Enter") { e.preventDefault(); runPersonSearch(); }
                     }}
-                    placeholder={peopleLoading ? "Loading people..." : "Search by name, department, or role"}
+                    placeholder={peopleLoading ? "Loading..." : "Search by name, department, or role"}
                     disabled={peopleLoading || loading || faceBusy}
                   />
                 </div>
@@ -713,21 +778,25 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                   type="button"
                   onClick={runPersonSearch}
                   disabled={peopleLoading || loading || faceBusy}
-                  className="btn-secondary flex items-center gap-2"
+                  className="btn-secondary"
                 >
-                  <Search className="w-4 h-4" />
-                  Search
+                  <Search className="w-4 h-4" /> Search
                 </button>
               </div>
             </div>
-
             {showSearchResults && (
               <div className="space-y-2">
-                {searchResults.length > 0 ? searchResults.map((person) => (
-                  <SearchResultButton key={buildPersonKey(person)} person={person} onSelect={handleSelectPerson} />
-                )) : (
-                  <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
-                    No employee or member found for "{searchTerm.trim()}".
+                {searchResults.length > 0 ? (
+                  searchResults.map((p) => (
+                    <SearchResultButton
+                      key={buildPersonKey(p)}
+                      person={p}
+                      onSelect={handleSelectPerson}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
+                    No result for &ldquo;{searchTerm.trim()}&rdquo;.
                   </div>
                 )}
               </div>
@@ -738,131 +807,161 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         {geoError && (
           <div className="flex items-center gap-2 text-warn text-sm bg-warn/10 border border-warn/20 rounded-xl px-4 py-2 mb-4">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{geoError} - punch will still be recorded without location</span>
+            <span>{geoError} — punch will still be recorded without location</span>
           </div>
         )}
 
         {message && (
-          <div className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 mb-4 ${
-            message.type === "success"
-              ? "bg-accent/10 border border-accent/20 text-accent"
-              : "bg-danger/10 border border-danger/20 text-danger"
-          }`}>
-            {message.type === "success"
-              ? <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              : <XCircle className="w-4 h-4 flex-shrink-0" />
-            }
+          <div
+            className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 mb-4 ${
+              message.type === "success"
+                ? "bg-accent/10 border border-accent/20 text-accent"
+                : "bg-danger/10 border border-danger/20 text-danger"
+            }`}
+          >
+            {message.type === "success" ? (
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+            ) : (
+              <XCircle className="w-4 h-4 flex-shrink-0" />
+            )}
             {message.text}
           </div>
         )}
 
-        <div className="mb-6 text-center">
-          <LiveClock />
-        </div>
-
         {selectedPerson ? (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/45 px-4 py-4 text-left">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-center gap-3 text-white">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
-                    <UserRound className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{selectedPerson.full_name || "Unknown person"}</p>
-                    <p className="mt-1 text-xs text-slate-500">Face verification uses the selected enrollment.</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className={`badge text-[10px] uppercase tracking-wide ${selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"}`}>
-                    {getPersonTypeLabel(selectedPerson)}
-                  </span>
-                  <span className="badge-blue badge text-[10px] uppercase tracking-wide">{getRoleLabel(selectedPerson.role)}</span>
-                </div>
+            {/* Selected person card */}
+            <div className="rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-4 max-w-xl mx-auto text-left">
+              <div className="flex items-center gap-3 text-white flex-wrap">
+                <UserRound className="w-4 h-4 text-accent" />
+                <span className="font-medium">{selectedPerson.full_name ?? "Unknown"}</span>
+                <span
+                  className={`badge text-[10px] uppercase tracking-wide ${
+                    selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"
+                  }`}
+                >
+                  {selectedPerson.kind === "member" ? "Member" : "Employee"}
+                </span>
+                <span className="badge-blue badge text-[10px] uppercase tracking-wide">
+                  {getRoleLabel(selectedPerson.role)}
+                </span>
               </div>
             </div>
 
+            {/* Clock status */}
             {isClockedIn ? (
-              <div className="rounded-xl border border-accent/20 bg-accent/10 px-4 py-3">
+              <div className="mb-2">
                 <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
                 <p className="text-slate-300 text-sm">
-                  {selectedPerson.full_name || "Selected person"} has been clocked in for {selectedPerson.kind === "member" ? <ElapsedTimer since={String(status?.punch_in ?? status?.timestamp ?? new Date().toISOString())} /> : <ElapsedTimer since={String(status?.timestamp ?? status?.punch_in ?? new Date().toISOString())} />}
+                  Clocked in for{" "}
+                  {selectedPerson.kind === "member" ? (
+                    <ElapsedTimer since={(status as MemberEntry).punch_in} />
+                  ) : (
+                    <ElapsedTimer since={(status as StaffPunch).timestamp} />
+                  )}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Must clock out before midnight or this session will be marked as{" "}
+                  <span className="text-warn">Did not clock out</span>.
                 </p>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-800 bg-slate-950/35 px-4 py-3">
+              <div className="mb-2">
                 <div className="badge-red mx-auto w-fit mb-2">NOT CLOCKED IN</div>
-                <p className="text-slate-500 text-sm">
-                  Start face verification to clock {selectedPerson.full_name || "this person"} in or out.
-                </p>
+                <p className="text-slate-500 text-sm">Ready to clock in for today.</p>
               </div>
             )}
 
+            {/* No face enrollment warning */}
             {!selectedFaceReference && (
-              <div className="card mx-auto max-w-xl border-warn/20 bg-warn/10 p-4 text-left">
+              <div className="card p-4 text-left bg-warn/10 border-warn/20 max-w-xl mx-auto">
                 <p className="text-warn text-sm">
                   {selectedPerson.kind === "staff" && selectedPerson.id === profile?.id ? (
                     <>
-                      Face Clock needs a saved face enrollment first.
-                      {" "}
-                      <Link to="/settings" className="text-accent underline underline-offset-4">Open Settings</Link>
-                      {" "}
+                      Face Clock needs a saved enrollment.{" "}
+                      <Link to="/settings" className="text-accent underline underline-offset-4">
+                        Open Settings
+                      </Link>{" "}
                       to add one.
                     </>
                   ) : (
-                    `${selectedPerson.full_name || "This person"} needs a saved face enrollment before using the face clock.`
+                    `${selectedPerson.full_name ?? "This person"} needs a saved face enrollment before using the face clock.`
                   )}
                 </p>
               </div>
             )}
 
-            <div className="mx-auto aspect-square max-w-sm overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 shadow-soft">
+            {/* Camera / face preview */}
+            <div className="rounded-[28px] overflow-hidden border border-slate-700 bg-slate-900/80 max-w-sm mx-auto aspect-square">
               {cameraOpen ? (
-                <video ref={videoRef} className="w-full h-full object-cover" autoPlay playsInline muted />
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-cover"
+                  autoPlay
+                  playsInline
+                  muted
+                />
               ) : facePreview ? (
-                <img src={facePreview} alt="Latest face verification capture" className="w-full h-full object-cover" />
+                <img
+                  src={facePreview}
+                  alt="Face verification capture"
+                  className="w-full h-full object-cover"
+                />
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-6">
                   <Camera className="w-10 h-10 mb-3 text-slate-600" />
-                  <p className="text-sm">Center the selected person and look straight ahead.</p>
+                  <p className="text-sm">Center the person&apos;s face and look straight ahead.</p>
                 </div>
               )}
             </div>
 
-            <p className="mx-auto max-w-xl text-sm leading-6 text-slate-500">
-              Once the face matches, the system captures the user's device, IP address, network used, date, time, and location immediately.
-            </p>
-
+            {/* Action buttons */}
             <div className="flex flex-wrap justify-center gap-3">
               <button
                 type="button"
                 onClick={handleFacePunch}
                 disabled={loading || geoLoading || faceBusy || !selectedFaceReference}
-                className={`flex items-center justify-center gap-3 rounded-xl px-6 py-3 font-display text-base font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 ${
+                className={`py-4 px-6 rounded-2xl font-display font-bold text-lg transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 ${
                   isClockedIn
                     ? "bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20"
                     : "btn-primary"
                 }`}
               >
-                {(loading || geoLoading || faceBusy) ? (
-                  <><Loader2 className="w-5 h-5 animate-spin" /> {cameraOpen ? "Verifying..." : "Opening camera..."}</>
+                {loading || geoLoading || faceBusy ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    {cameraOpen ? "Verifying..." : "Opening camera..."}
+                  </>
                 ) : (
-                  <><ScanFace className="w-5 h-5" /> {cameraOpen ? (cameraReady ? `${actionLabel} ${selectedPerson.full_name || ""}` : "Preparing Camera...") : `Start ${actionLabel}`}</>
+                  <>
+                    <ScanFace className="w-5 h-5" />
+                    {cameraOpen
+                      ? cameraReady
+                        ? `${actionLabel} ${selectedPerson.full_name ?? ""}`
+                        : "Preparing Camera..."
+                      : `Start ${actionLabel}`}
+                  </>
                 )}
               </button>
               {cameraOpen && (
-                <button type="button" onClick={stopFaceCamera} disabled={loading || faceBusy} className="btn-secondary">
+                <button
+                  type="button"
+                  onClick={stopFaceCamera}
+                  disabled={loading || faceBusy}
+                  className="btn-secondary"
+                >
                   Cancel Camera
                 </button>
               )}
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-xl rounded-xl border border-dashed border-slate-700 bg-slate-900/50 px-6 py-8 text-slate-500">
-            Search for an employee or member name above, then select the correct result to open the face clock.
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 max-w-xl mx-auto px-6 py-8 text-slate-500">
+            {standalone
+              ? "Search for an employee or member above, then select the correct result."
+              : "Loading your profile..."}
           </div>
         )}
-        </section>
       </div>
     </div>
   );
