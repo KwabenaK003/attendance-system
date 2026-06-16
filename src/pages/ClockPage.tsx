@@ -20,6 +20,14 @@ import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 import { resolveClockStatus, markExpiredSession } from "../lib/dailyClockReset";
 
+type SessionProfile = {
+  id: string | null;
+  full_name: string;
+  role: string;
+  department: string;
+  face_reference: unknown;
+};
+
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 type PersonKind = "staff" | "member";
@@ -30,7 +38,7 @@ interface Person {
   full_name: string | null;
   role: string | null;
   department: string | null;
-  face_reference: string | null;
+  face_reference: unknown | null;
 }
 
 /** Raw row from `punches` (staff). */
@@ -98,7 +106,7 @@ interface ClockPageProps {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function LiveClock(): JSX.Element {
+function LiveClock() {
   const [time, setTime] = useState<Date>(new Date());
 
   useEffect(() => {
@@ -108,10 +116,10 @@ function LiveClock(): JSX.Element {
 
   return (
     <div className="text-center">
-      <p className="font-mono font-bold text-6xl text-white tracking-tight tabular-nums">
+      <p className="font-mono font-bold text-4xl sm:text-5xl lg:text-6xl text-black tracking-tight tabular-nums">
         {format(time, "HH:mm:ss")}
       </p>
-      <p className="text-slate-400 mt-2 font-body">{format(time, "EEEE, MMMM d, yyyy")}</p>
+      <p className="mt-2 font-body text-ink-muted text-sm sm:text-base">{format(time, "EEEE, MMMM d, yyyy")}</p>
     </div>
   );
 }
@@ -120,7 +128,7 @@ interface ElapsedTimerProps {
   since: string; // ISO timestamp
 }
 
-function ElapsedTimer({ since }: ElapsedTimerProps): JSX.Element {
+function ElapsedTimer({ since }: ElapsedTimerProps) {
   const [elapsed, setElapsed] = useState<number>(0);
 
   useEffect(() => {
@@ -147,7 +155,7 @@ interface SearchResultButtonProps {
   onSelect: (person: Person) => void;
 }
 
-function SearchResultButton({ person, onSelect }: SearchResultButtonProps): JSX.Element {
+function SearchResultButton({ person, onSelect }: SearchResultButtonProps) {
   return (
     <button
       type="button"
@@ -169,7 +177,7 @@ function SearchResultButton({ person, onSelect }: SearchResultButtonProps): JSX.
               {person.kind === "member" ? "Member" : "Employee"}
             </span>
           </div>
-          <p className="text-slate-500 text-xs">
+      <p className="text-ink-muted text-xs">
             {getRoleLabel(person.role)}
             {person.department ? ` • ${person.department}` : ""}
           </p>
@@ -181,7 +189,7 @@ function SearchResultButton({ person, onSelect }: SearchResultButtonProps): JSX.
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildFallbackEmployee(profile: Person | null): Person | null {
+function buildFallbackEmployee(profile: SessionProfile | null): Person | null {
   if (!profile?.id) return null;
   return {
     id: profile.id,
@@ -213,7 +221,7 @@ function sortPeople(arr: Person[]): Person[] {
   );
 }
 
-function mergeEmployees(employees: Person[], currentProfile: Person | null): Person[] {
+function mergeEmployees(employees: Person[], currentProfile: SessionProfile | null): Person[] {
   const merged = new Map<string, Person>();
   for (const e of employees ?? []) {
     if (e?.id) merged.set(e.id, normalizeStaffMember(e));
@@ -271,7 +279,7 @@ async function insertPunchRecord(
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function ClockPage({ standalone = false }: ClockPageProps): JSX.Element {
+export default function ClockPage({ standalone = false }: ClockPageProps) {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
 
@@ -707,8 +715,11 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
       }`}
     >
       <div className="animate-fade-up">
-        <h2 className="font-display font-bold text-2xl text-white">Time Clock</h2>
-        <p className="text-slate-400 text-sm mt-1">
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+          Time Clock
+        </div>
+        <h2 className="mt-3 font-display font-bold text-2xl text-ink">Time Clock</h2>
+        <p className="text-ink-muted text-sm mt-1">
           {standalone
             ? "Select an employee or member then complete face verification to record the punch."
             : "Complete face verification to record your own clock-in or clock-out."}
@@ -717,7 +728,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
 
       {/* Station link for management */}
       {!standalone && isManagementUser && (
-        <div className="card p-5 animate-fade-up border-accent/20">
+        <div className="card-glow p-5 animate-fade-up">
           <button type="button" onClick={copyStationLink} className="btn-primary">
             <Copy className="w-4 h-4" />
             {stationLinkCopied ? "Copied" : "Copy Kiosk Link"}
@@ -734,10 +745,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
             className={`relative w-32 h-32 rounded-full flex items-center justify-center ${
               isClockedIn
                 ? "bg-accent/10 border-2 border-accent clock-ring"
-                : "bg-slate-800 border-2 border-slate-700"
+                : "bg-page-bg border-2 border-border"
             }`}
           >
-            <Clock className={`w-10 h-10 ${isClockedIn ? "text-accent" : "text-slate-500"}`} />
+            <Clock className={`w-10 h-10 ${isClockedIn ? "text-accent" : "text-ink-muted"}`} />
             {isClockedIn && (
               <div className="absolute -inset-1 rounded-full border border-accent/20 animate-ping" />
             )}
@@ -745,9 +756,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
         </div>
 
         {/* Daily reset notice */}
-        <p className="text-xs text-slate-500 mb-6">
+        <p className="text-xs text-ink-muted mb-6">
           Clock runs on a{" "}
-          <span className="text-slate-400 font-medium">24-hour daily cycle</span> (midnight reset).
+          <span className="text-ink font-medium">24-hour daily cycle</span> (midnight reset).
           If you do not clock out before midnight, your record will be marked as{" "}
           <span className="text-warn font-medium">Did not clock out</span>.
         </p>
@@ -757,7 +768,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
           <div className="max-w-xl mx-auto text-left space-y-4 mb-6">
             <div>
               <label className="label">Search Employee or Member</label>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
                   <input
@@ -778,7 +789,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
                   type="button"
                   onClick={runPersonSearch}
                   disabled={peopleLoading || loading || faceBusy}
-                  className="btn-secondary"
+                  className="btn-secondary justify-center sm:justify-start"
                 >
                   <Search className="w-4 h-4" /> Search
                 </button>
@@ -795,7 +806,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
                     />
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-4 py-3 text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-border bg-page-bg px-4 py-3 text-sm text-ink-muted">
                     No result for &ldquo;{searchTerm.trim()}&rdquo;.
                   </div>
                 )}
@@ -831,8 +842,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
         {selectedPerson ? (
           <div className="space-y-4">
             {/* Selected person card */}
-            <div className="rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-4 max-w-xl mx-auto text-left">
-              <div className="flex items-center gap-3 text-white flex-wrap">
+            <div className="rounded-2xl border border-border bg-page-bg px-4 py-4 max-w-xl mx-auto text-left">
+              <div className="flex items-center gap-3 text-ink flex-wrap">
                 <UserRound className="w-4 h-4 text-accent" />
                 <span className="font-medium">{selectedPerson.full_name ?? "Unknown"}</span>
                 <span
@@ -850,9 +861,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
 
             {/* Clock status */}
             {isClockedIn ? (
-              <div className="mb-2">
-                <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
-                <p className="text-slate-300 text-sm">
+                <div className="mb-2">
+                  <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
+                <p className="text-ink-muted text-sm">
                   Clocked in for{" "}
                   {selectedPerson.kind === "member" ? (
                     <ElapsedTimer since={(status as MemberEntry).punch_in} />
@@ -868,7 +879,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
             ) : (
               <div className="mb-2">
                 <div className="badge-red mx-auto w-fit mb-2">NOT CLOCKED IN</div>
-                <p className="text-slate-500 text-sm">Ready to clock in for today.</p>
+                <p className="text-ink-muted text-sm">Ready to clock in for today.</p>
               </div>
             )}
 
@@ -892,7 +903,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
             )}
 
             {/* Camera / face preview */}
-            <div className="rounded-[28px] overflow-hidden border border-slate-700 bg-slate-900/80 max-w-sm mx-auto aspect-square">
+              <div className="rounded-[28px] overflow-hidden border border-border bg-card-bg max-w-sm mx-auto aspect-square">
               {cameraOpen ? (
                 <video
                   ref={videoRef}
@@ -908,8 +919,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 p-6">
-                  <Camera className="w-10 h-10 mb-3 text-slate-600" />
+                <div className="w-full h-full flex flex-col items-center justify-center text-ink-muted p-6">
+                  <Camera className="w-10 h-10 mb-3 text-ink-muted" />
                   <p className="text-sm">Center the person&apos;s face and look straight ahead.</p>
                 </div>
               )}
@@ -948,15 +959,15 @@ export default function ClockPage({ standalone = false }: ClockPageProps): JSX.E
                   type="button"
                   onClick={stopFaceCamera}
                   disabled={loading || faceBusy}
-                  className="btn-secondary"
-                >
+                    className="btn-secondary"
+                  >
                   Cancel Camera
                 </button>
               )}
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 max-w-xl mx-auto px-6 py-8 text-slate-500">
+          <div className="rounded-2xl border border-dashed border-border bg-page-bg max-w-xl mx-auto px-6 py-8 text-ink-muted">
             {standalone
               ? "Search for an employee or member above, then select the correct result."
               : "Loading your profile..."}

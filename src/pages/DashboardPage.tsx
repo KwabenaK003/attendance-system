@@ -76,12 +76,12 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }: StatCardP
   } satisfies Record<StatColor, string>;
 
   return (
-    <div className="stat-card animate-fade-up">
+    <div className="stat-card animate-fade-up border-border bg-card-bg">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-2 font-display text-3xl font-semibold text-white">{value}</p>
-          {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{label}</p>
+          <p className="mt-2 font-display text-3xl font-semibold text-ink">{value}</p>
+          {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
         </div>
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${colors[color]}`}>
           <Icon className="h-5 w-5" />
@@ -98,7 +98,7 @@ function HoursTooltip({ active, payload = [], label }: ChartTooltipProps = {}) {
 
   return (
     <div className="card px-3 py-2 text-sm">
-      <p className="text-slate-400">{label}</p>
+      <p className="text-ink-muted">{label}</p>
       <p className="font-semibold text-accent">{payload[0].value}h</p>
     </div>
   );
@@ -112,7 +112,7 @@ function StatusTooltip({ active, payload = [] }: ChartTooltipProps = {}) {
   const entry = payload[0];
   return (
     <div className="card px-3 py-2 text-sm">
-      <p className="text-slate-400">{entry.name}</p>
+      <p className="text-ink-muted">{entry.name}</p>
       <p className="font-semibold" style={{ color: entry.payload?.fill || entry.color }}>
         {entry.value}
       </p>
@@ -441,13 +441,30 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <div className="card animate-fade-up overflow-hidden p-6">
+      <div className="card-glow animate-fade-up overflow-hidden p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="mt-3 font-display text-3xl font-semibold text-white">Attendance Overview</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              Here is a summary of the Attendance Management
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+              Dashboard
+            </div>
+            <h2 className="mt-3 font-display text-3xl font-semibold text-ink">Attendance Overview</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
+              A quick read on attendance, activity, and leave across the organization.
             </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[420px] lg:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Today</p>
+              <p className="mt-1 font-display text-lg font-semibold text-ink">{stats.todayHours}h</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">This Week</p>
+              <p className="mt-1 font-display text-lg font-semibold text-ink">{stats.weekHours}h</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Live</p>
+              <p className="mt-1 font-display text-lg font-semibold text-ink">{isAdmin ? "Admin view" : "Personal view"}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -479,12 +496,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
+        <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
         <div className="card flex h-full min-h-[340px] flex-col p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h3 className="font-display text-lg font-semibold text-white">This Week&apos;s Hours</h3>
-              <p className="mt-1 text-sm text-slate-500">Personal logged hours by day</p>
+              <h3 className="font-display text-lg font-semibold text-ink">This Week&apos;s Hours</h3>
+              <p className="mt-1 text-sm text-ink-muted">Personal logged hours by day</p>
             </div>
             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
               <Clock className="h-4 w-4" />
@@ -519,8 +536,8 @@ export default function DashboardPage() {
         {isAdmin && (
           <div className="card flex h-full min-h-[340px] flex-col p-5">
             <div className="mb-5">
-              <h3 className="font-display text-lg font-semibold text-white">Active vs Inactive Members</h3>
-              <p className="mt-1 text-sm text-slate-500">Current membership status</p>
+              <h3 className="font-display text-lg font-semibold text-ink">Active vs Inactive Members</h3>
+              <p className="mt-1 text-sm text-ink-muted">Current membership status</p>
             </div>
             <div className="h-[220px] flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -543,14 +560,14 @@ export default function DashboardPage() {
         {isAdmin && (
           <div className="card flex h-full min-h-[340px] flex-col p-5">
             <div className="mb-4">
-              <h3 className="font-display text-lg font-semibold text-white">Gender Distribution</h3>
-              <p className="mt-1 text-sm text-slate-500">Member profile breakdown</p>
+              <h3 className="font-display text-lg font-semibold text-ink">Gender Distribution</h3>
+              <p className="mt-1 text-sm text-ink-muted">Member profile breakdown</p>
             </div>
 
             {loading ? (
-              <div className="flex h-[220px] items-center justify-center text-slate-500">Loading...</div>
+            <div className="flex h-[220px] items-center justify-center text-ink-muted">Loading...</div>
             ) : statusBreakdown.length === 0 ? (
-              <div className="flex h-[220px] items-center justify-center text-slate-500">No gender data yet.</div>
+              <div className="flex h-[220px] items-center justify-center text-ink-muted">No gender data yet.</div>
             ) : (
               <>
                 <div className="h-[220px] flex-1">
@@ -575,12 +592,12 @@ export default function DashboardPage() {
 
                 <div className="mt-4 grid gap-2 grid-cols-3">
                   {statusBreakdown.map((slice) => (
-                    <div key={slice.name} className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3">
+                    <div key={slice.name} className="rounded-xl border border-border bg-page-bg px-3 py-3">
                       <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.fill }} />
-                        <span className="text-xs uppercase tracking-wide text-slate-500">{slice.name}</span>
+                        <span className="text-xs uppercase tracking-wide text-ink-muted">{slice.name}</span>
                       </div>
-                      <p className="mt-2 font-display text-2xl font-bold text-white">{slice.value}</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-ink">{slice.value}</p>
                     </div>
                   ))}
                 </div>
@@ -593,8 +610,8 @@ export default function DashboardPage() {
       <div className="card overflow-hidden p-5">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-          <h3 className="font-display text-lg font-semibold text-white">Recent Clock In / Out</h3>
-          <p className="mt-1 text-sm text-slate-400">
+          <h3 className="font-display text-lg font-semibold text-ink">Recent Clock In / Out</h3>
+          <p className="mt-1 text-sm text-ink-muted">
             {isAdmin ? "Latest employee and member clock events." : "Your latest clock events."}
           </p>
           </div>
@@ -602,12 +619,12 @@ export default function DashboardPage() {
         </div>
 
         {recentClockRows.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/40 py-10 text-center text-sm text-slate-500">No recent clock events yet.</div>
+          <div className="rounded-xl border border-dashed border-border bg-page-bg py-10 text-center text-sm text-ink-muted">No recent clock events yet.</div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-sm">
-              <thead className="bg-slate-950/50">
-                <tr className="border-b border-slate-800">
+              <thead className="bg-page-bg">
+                <tr className="border-b border-border">
                   <th className="table-header px-4 py-3 text-left">Name</th>
                   <th className="table-header px-4 py-3 text-left">Type</th>
                   <th className="table-header px-4 py-3 text-left">Action</th>
@@ -617,16 +634,16 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {recentClockRows.map((activity) => (
-                  <tr key={activity.id} className="border-b border-slate-800/50 transition-colors last:border-0 hover:bg-slate-800/30">
-                    <td className="px-4 py-3 text-white">{activity.actorLabel || "You"}</td>
-                    <td className="px-4 py-3 text-slate-400">{activity.personType || "Employee"}</td>
+                  <tr key={activity.id} className="border-b border-border/60 transition-colors last:border-0 hover:bg-page-bg">
+                    <td className="px-4 py-3 text-ink">{activity.actorLabel || "You"}</td>
+                    <td className="px-4 py-3 text-ink-muted">{activity.personType || "Employee"}</td>
                     <td className="px-4 py-3">
                       <span className={`badge ${activity.type === "in" ? "badge-green" : "badge-red"}`}>
                         Clock {activity.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{activity.locationName || "-"}</td>
-                    <td className="px-4 py-3 text-slate-400">{formatClockTime(activity.timestamp)}</td>
+                    <td className="px-4 py-3 text-ink-muted">{activity.locationName || "-"}</td>
+                    <td className="px-4 py-3 text-ink-muted">{formatClockTime(activity.timestamp)}</td>
                   </tr>
                 ))}
               </tbody>

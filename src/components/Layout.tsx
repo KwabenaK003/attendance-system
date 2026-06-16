@@ -63,7 +63,7 @@ type NotificationState = {
 
 function NotificationRow({ icon: Icon, title, body, tone = "default" }: NotificationRowProps) {
   const toneClasses = {
-    default: "border-slate-800 bg-slate-900/80 text-slate-300",
+    default: "border-border bg-card-bg text-ink-muted",
     success: "border-accent/20 bg-accent/10 text-accent",
     warning: "border-warn/20 bg-warn/10 text-warn",
     info: "border-info/20 bg-info/10 text-info",
@@ -72,11 +72,11 @@ function NotificationRow({ icon: Icon, title, body, tone = "default" }: Notifica
   return (
     <div className={`rounded-xl border px-3 py-3 shadow-sm ${toneClasses[tone] || toneClasses.default}`}>
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-current/15 bg-black/10">
+        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-current/15 bg-black/5">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white">{title}</p>
+          <p className="text-sm font-medium text-ink">{title}</p>
           <p className="mt-1 text-xs leading-5 text-current/90">{body}</p>
         </div>
       </div>
@@ -405,20 +405,20 @@ export default function Layout({ children }: { children: ReactNode }) {
   const SidebarContent = ({ compact = false }: { compact?: boolean }) => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className={`border-b border-slate-800/80 py-5 ${compact ? "px-3" : "px-4"}`}>
+      <div className={`border-b border-white/10 py-5 ${compact ? "px-3" : "px-4"}`}>
         <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-          <div className="w-9 h-9 rounded-lg bg-accent/10 border border-accent/25 flex items-center justify-center clock-ring">
-            <Building2 className="w-4 h-4 text-accent" />
+          <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center clock-ring">
+            <Building2 className="w-4 h-4 text-primary" />
           </div>
           <div className={compact ? "hidden" : "min-w-0"}>
-            <h1 className="font-display font-bold text-white text-lg leading-none">Attendance Management</h1>
+            <h1 className="font-display font-bold text-sidebar-text text-lg leading-none">Attendance Management</h1>
           </div>
         </div>
       </div>
 
       {/* Nav */}
       <nav className={`flex-1 py-4 space-y-1 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
-        {!compact && <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
+        {!compact && <p className="text-sidebar-text/40 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
         {visibleNavItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -435,18 +435,18 @@ export default function Layout({ children }: { children: ReactNode }) {
       </nav>
 
       {/* User */}
-      <div className={`border-t border-slate-800/80 ${compact ? "p-2" : "p-3"}`}>
-        <div className={`rounded-xl bg-slate-900/50 ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
-          <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent text-xs font-bold font-display flex-shrink-0">
+      <div className={`border-t border-white/10 ${compact ? "p-2" : "p-3"}`}>
+        <div className={`rounded-xl bg-white/5 ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
+          <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center text-primary text-xs font-bold font-display flex-shrink-0">
             {initials}
           </div>
           <div className={compact ? "hidden" : "flex-1 min-w-0"}>
-            <p className="text-white text-sm font-medium truncate">{displayName}</p>
-            <p className="text-slate-500 text-xs">{getRoleLabel(profile?.role)}</p>
+            <p className="text-sidebar-text text-sm font-medium truncate">{displayName}</p>
+            <p className="text-sidebar-text/40 text-xs">{getRoleLabel(profile?.role)}</p>
           </div>
           <button
             onClick={handleSignOut}
-            className={`text-slate-500 hover:text-danger transition-colors ${compact ? "" : "ml-auto"}`}
+            className={`text-sidebar-text/40 hover:text-danger transition-colors ${compact ? "" : "ml-auto"}`}
             title="Sign out"
           >
             <LogOut className="w-4 h-4" />
@@ -457,10 +457,10 @@ export default function Layout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex h-screen overflow-hidden bg-page-bg text-ink">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col border-r border-slate-800/80 bg-slate-950/95 flex-shrink-0 shadow-2xl shadow-black/20 transition-[width] duration-300 ease-out ${
+        className={`hidden lg:flex flex-col bg-sidebar flex-shrink-0 shadow-2xl shadow-black/10 transition-[width] duration-300 ease-out ${
           desktopSidebarExpanded ? "w-60" : "w-20"
         }`}
         onMouseEnter={() => setDesktopSidebarExpanded(true)}
@@ -474,10 +474,10 @@ export default function Layout({ children }: { children: ReactNode }) {
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="fixed inset-0 bg-black/65 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="relative w-64 bg-slate-950 border-r border-slate-800 flex flex-col z-10 shadow-2xl">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+        <aside className="relative w-64 bg-sidebar flex flex-col z-10 shadow-2xl">
             <button
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-4 right-4 text-sidebar-text/50 hover:text-sidebar-text"
               onClick={() => setSidebarOpen(false)}
             >
               <X className="w-5 h-5" />
@@ -490,8 +490,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="h-14 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md flex items-center px-4 gap-4 flex-shrink-0">
-          <button className="lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(true)}>
+        <header className="h-14 border-b border-border bg-card-bg flex items-center px-4 gap-4 flex-shrink-0">
+          <button className="lg:hidden text-ink-muted hover:text-ink" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
@@ -502,8 +502,8 @@ export default function Layout({ children }: { children: ReactNode }) {
               onClick={() => setNotificationsOpen((open) => !open)}
               className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
                 notificationsOpen
-                  ? "border-accent/40 bg-accent/10 text-accent"
-                  : "border-slate-700/80 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-page-bg text-ink-muted hover:border-primary/30 hover:text-ink"
               }`}
               title="Notifications"
               aria-label="Toggle notifications"
@@ -512,8 +512,8 @@ export default function Layout({ children }: { children: ReactNode }) {
               <Bell className="w-4 h-4" />
               {unreadCount > 0 && (
                 <>
-                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />
-                  <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-slate-950">
+                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                  <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-bold leading-4 text-white">
                     {unreadCount}
                   </span>
                 </>
@@ -523,7 +523,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.06),transparent_34%)] p-4 lg:p-6">
+        <main className="flex-1 overflow-y-auto bg-page-bg px-4 pb-4 pt-2 lg:px-6 lg:pb-6 lg:pt-3">
           {children}
         </main>
       </div>
@@ -532,20 +532,20 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="pointer-events-none fixed inset-0 z-[120]">
           <div
             ref={notificationPanelRef}
-            className="pointer-events-auto fixed rounded-xl border border-slate-800 bg-slate-950/95 p-4 shadow-2xl shadow-black/40 backdrop-blur"
+            className="pointer-events-auto fixed rounded-xl border border-border bg-card-bg p-4 shadow-2xl shadow-black/10 backdrop-blur"
             style={notificationPanelStyle}
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-display text-base font-semibold text-white">Notifications</h3>
-                <p className="mt-1 text-xs text-slate-500">
+                <h3 className="font-display text-base font-semibold text-ink">Notifications</h3>
+                <p className="mt-1 text-xs text-ink-muted">
                   {unreadCount > 0 ? `${unreadCount} update${unreadCount === 1 ? "" : "s"} available` : "Everything looks up to date"}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setNotificationsOpen(false)}
-                className="rounded-lg border border-slate-800 p-2 text-slate-500 transition-colors hover:border-slate-700 hover:text-white"
+                className="rounded-lg border border-border p-2 text-ink-muted transition-colors hover:border-primary/30 hover:text-ink"
                 aria-label="Close notifications"
               >
                 <X className="h-4 w-4" />
@@ -553,7 +553,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
 
             {notificationState.loading ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-border bg-page-bg px-4 py-5 text-sm text-ink-muted">
                 Loading notifications...
               </div>
             ) : notificationState.error ? (
@@ -561,7 +561,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 {notificationState.error}
               </div>
             ) : notifications.length === 0 ? (
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-4 py-5 text-sm text-slate-400">
+              <div className="rounded-xl border border-border bg-page-bg px-4 py-5 text-sm text-ink-muted">
                 No new notifications right now.
               </div>
             ) : (

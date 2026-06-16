@@ -117,14 +117,14 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
       <form onSubmit={handleSubmit} className="card relative z-10 w-full max-w-2xl p-6 animate-fade-up">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
-            <h3 className="font-display text-lg font-semibold text-white">{isCreateMode ? "Create User" : "Edit User"}</h3>
-            <p className="mt-1 text-sm text-slate-400">
+            <h3 className="font-display text-lg font-semibold text-ink">{isCreateMode ? "Create User" : "Edit User"}</h3>
+            <p className="mt-1 text-sm text-ink-muted">
               {isCreateMode
                 ? "Create an admin sign-in account."
                 : "Update the admin user details tracked by this app. Password changes must be made in Supabase Auth."}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="text-slate-400 transition-colors hover:text-white" aria-label="Close user editor">
+          <button type="button" onClick={onClose} className="text-ink-muted transition-colors hover:text-ink" aria-label="Close user editor">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -160,7 +160,7 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
                 <button
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -401,11 +401,14 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display text-2xl font-bold text-white">Users</h2>
-          <p className="mt-1 text-sm text-slate-400">Create and track admin sign-in accounts for the attendance system.</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+            Users
+          </div>
+          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Users</h2>
+          <p className="mt-1 text-sm text-ink-muted">Create and track admin sign-in accounts for the attendance system.</p>
         </div>
         <button
           type="button"
@@ -421,7 +424,7 @@ export default function UsersPage() {
         <div className="flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span>{error}</span>
-          <button onClick={() => setError("")} className="ml-auto text-danger transition-colors hover:text-white" aria-label="Dismiss error">
+          <button onClick={() => setError("")} className="ml-auto text-danger transition-colors hover:text-ink" aria-label="Dismiss error">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -431,53 +434,53 @@ export default function UsersPage() {
         <div className="flex items-center gap-2 rounded-xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent">
           <CheckCircle className="h-4 w-4 flex-shrink-0" />
           <span>{success}</span>
-          <button onClick={() => setSuccess("")} className="ml-auto text-accent transition-colors hover:text-white" aria-label="Dismiss success">
+          <button onClick={() => setSuccess("")} className="ml-auto text-accent transition-colors hover:text-ink" aria-label="Dismiss success">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
       <div className="card animate-fade-up overflow-visible">
-        <div className="border-b border-slate-800 px-5 py-4">
-          <h3 className="font-display text-lg font-semibold text-white">Created Admin Users</h3>
+        <div className="border-b border-border px-5 py-4">
+          <h3 className="font-display text-lg font-semibold text-ink">Created Admin Users</h3>
         </div>
         {loading ? (
-          <div className="p-8 text-center text-slate-500">Loading users…</div>
+          <div className="p-8 text-center text-ink-muted">Loading users…</div>
         ) : users.length === 0 ? (
           <div className="p-12 text-center">
-            <Users className="mx-auto mb-2 h-8 w-8 text-slate-700" />
-            <p className="text-slate-500">No users created yet.</p>
+            <Users className="mx-auto mb-2 h-8 w-8 text-ink-muted" />
+            <p className="text-ink-muted">No users created yet.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-800/80">
+          <div className="divide-y divide-border">
             {users.map((user) => (
-              <div key={user.id} className="flex items-center gap-4 px-5 py-4 hover:bg-slate-900/40">
+              <div key={user.id} className="flex items-center gap-4 px-5 py-4 hover:bg-page-bg">
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-accent/15 bg-accent/10 font-display text-sm font-bold text-accent">
                   {(user.full_name || user.email || "?").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-white">{user.full_name || "Unnamed Admin"}</p>
-                  <p className="truncate text-xs text-slate-500">{user.email || "Email only visible for users created from this browser"}</p>
+                  <p className="truncate font-medium text-ink">{user.full_name || "Unnamed Admin"}</p>
+                  <p className="truncate text-xs text-ink-muted">{user.email || "Email only visible for users created from this browser"}</p>
                 </div>
                 <span className="badge badge-blue text-xs">Admin</span>
                 <div data-user-actions className="relative">
                   <button
                     type="button"
                     onClick={() => setActiveMenuId((currentId) => currentId === (user.id ?? "") ? null : (user.id ?? ""))}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink"
                     aria-label={`Open actions for ${user.full_name || user.email || "user"}`}
                   >
                     <MoreVertical className="h-4 w-4" />
                   </button>
                   {activeMenuId === user.id && (
-                    <div className="absolute bottom-full right-0 z-10 mb-2 w-36 rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-lg shadow-black/30">
+                    <div className="absolute bottom-full right-0 z-10 mb-2 w-36 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
                       <button
                         type="button"
                         onClick={() => {
                           setEditingUser(user);
                           setActiveMenuId(null);
                         }}
-                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-800"
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-page-bg"
                       >
                         Edit
                       </button>
@@ -524,8 +527,8 @@ export default function UsersPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
           <div className="card relative z-10 w-full max-w-sm p-6 text-center animate-fade-up">
             <Trash2 className="mx-auto mb-3 h-10 w-10 text-danger" />
-            <h3 className="mb-1 font-display text-lg font-semibold text-white">Delete User?</h3>
-            <p className="mb-5 text-sm text-slate-400">
+            <h3 className="mb-1 font-display text-lg font-semibold text-ink">Delete User?</h3>
+            <p className="mb-5 text-sm text-ink-muted">
               This removes {deleteTarget.full_name || deleteTarget.email || "this user"} from the app list.
             </p>
             <div className="flex gap-3">

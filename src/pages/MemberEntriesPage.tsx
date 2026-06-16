@@ -1,22 +1,48 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, parseISO, differenceInMinutes } from "date-fns";
 import { Clock, Search, Plus, X, Download, MapPin, AlertCircle } from "lucide-react";
 import { useGeolocation } from "../hooks/useGeolocation";
 
-function formatDuration(minutes) {
+type RelatedMember = {
+  full_name?: string | null;
+  department?: string | null;
+  hourly_rate?: number | string | null;
+};
+
+type MemberEntryRow = {
+  id?: string;
+  member_id?: string;
+  punch_in?: string;
+  punch_out?: string | null;
+  hours?: number | null;
+  location_name?: string | null;
+  note?: string | null;
+  members?: RelatedMember | RelatedMember[] | null;
+  [key: string]: unknown;
+};
+
+function formatDuration(minutes: number | null | undefined) {
   if (!minutes || minutes < 0) return "—";
   const h = Math.floor(minutes / 60);
   const m = Math.round(minutes % 60);
   return `${h}h ${m}m`;
 }
 
+function getRelatedMember(entry: MemberEntryRow): RelatedMember | null {
+  if (Array.isArray(entry.members)) {
+    return entry.members[0] || null;
+  }
+
+  return entry.members || null;
+}
+
 export default function MemberEntriesPage() {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading } = useGeolocation();
   const [members, setMembers] = useState<LooseRow[]>([]);
-  const [entries, setEntries] = useState<LooseRow[]>([]);
+  const [entries, setEntries] = useState<MemberEntryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedMember, setSelectedMember] = useState("");
@@ -37,11 +63,15 @@ export default function MemberEntriesPage() {
         .limit(100),
     ]);
     setMembers(mems || []);
-    setEntries(ents || []);
+    setEntries((ents || []) as MemberEntryRow[]);
     setLoading(false);
   }
 
-  async function clockInMember(memberId) {
+  async function clockInMember(memberId: string) {
+    if (!profile?.id) {
+      setError("Your session is still loading");
+      return;
+    }
     setSaving(true); setError("");
     let loc = null;
     try { loc = await getLocation(); } catch {}
@@ -58,7 +88,7 @@ export default function MemberEntriesPage() {
     setSaving(false);
   }
 
-  async function clockOutMember(entryId, punchIn) {
+  async function clockOutMember(entryId: string, punchIn: string) {
     const now = new Date();
     const hours = differenceInMinutes(now, parseISO(punchIn)) / 60;
     await supabase.from("member_entries").update({
@@ -70,6 +100,7 @@ export default function MemberEntriesPage() {
 
   async function saveManualEntry() {
     if (!form.member_id || !form.punch_in) { setError("Member and punch-in time are required"); return; }
+    if (!profile?.id) { setError("Your session is still loading"); return; }
     setSaving(true); setError("");
     const hours = form.punch_out
       ? differenceInMinutes(new Date(form.punch_out), new Date(form.punch_in)) / 60
@@ -92,11 +123,11 @@ export default function MemberEntriesPage() {
   function exportCSV() {
     const header = ["Member", "Department", "Clock In", "Clock Out", "Duration", "Hours", "Location", "Note"];
     const rows = filteredEntries.map(e => [
-      e.members?.full_name || "",
-      e.members?.department || "",
-      format(parseISO(e.punch_in), "yyyy-MM-dd HH:mm"),
+      getRelatedMember(e)?.full_name || "",
+      getRelatedMember(e)?.department || "",
+      e.punch_in ? format(parseISO(e.punch_in), "yyyy-MM-dd HH:mm") : "",
       e.punch_out ? format(parseISO(e.punch_out), "yyyy-MM-dd HH:mm") : "Active",
-      formatDuration(e.punch_out ? differenceInMinutes(parseISO(e.punch_out), parseISO(e.punch_in)) : null),
+      formatDuration(e.punch_out && e.punch_in ? differenceInMinutes(parseISO(e.punch_out), parseISO(e.punch_in)) : null),
       e.hours || "",
       e.location_name || "",
       e.note || "",
@@ -108,18 +139,18 @@ export default function MemberEntriesPage() {
   }
 
   // Active entries (no punch_out)
-  const activeEntries = entries.filter(e => !e.punch_out);
+  const activeEntries = entries.filter((e) => !e.punch_out);
 
-  const filteredEntries = entries.filter(e => {
+  const filteredEntries = entries.filter((e) => {
     const matchMember = !selectedMember || e.member_id === selectedMember;
     const matchSearch = !search ||
-      e.members?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      e.members?.department?.toLowerCase().includes(search.toLowerCase()) ||
-      e.location_name?.toLowerCase().includes(search.toLowerCase());
+      getRelatedMember(e)?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      getRelatedMember(e)?.department?.toLowerCase().includes(search.toLowerCase()) ||
+      (e.location_name || "").toLowerCase().includes(search.toLowerCase());
     return matchMember && matchSearch;
   });
 
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const set = (key: keyof typeof form) => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -147,14 +178,14 @@ export default function MemberEntriesPage() {
             {activeEntries.length} Active Session{activeEntries.length > 1 ? "s" : ""}
           </p>
           <div className="space-y-2">
-            {activeEntries.map(e => (
+            {activeEntries.map((e) => (
               <div key={e.id} className="flex items-center gap-3 bg-slate-800/40 rounded-xl px-4 py-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium text-sm">{e.members?.full_name}</p>
-                  <p className="text-slate-500 text-xs">Clocked in at {format(parseISO(e.punch_in), "HH:mm")}</p>
+                  <p className="text-white font-medium text-sm">{getRelatedMember(e)?.full_name}</p>
+                  <p className="text-slate-500 text-xs">Clocked in at {e.punch_in ? format(parseISO(e.punch_in), "HH:mm") : "—"}</p>
                 </div>
                 <button
-                  onClick={() => clockOutMember(e.id, e.punch_in)}
+                  onClick={() => e.id && e.punch_in && void clockOutMember(e.id, e.punch_in)}
                   className="btn-danger py-1.5 px-3 text-xs"
                 >
                   Clock Out
@@ -174,10 +205,10 @@ export default function MemberEntriesPage() {
           </div>
         )}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {members.filter(m => !activeEntries.find(e => e.member_id === m.id)).map(m => (
+          {members.filter((m) => !activeEntries.find((e) => e.member_id === m.id)).map((m) => (
             <button
               key={m.id}
-              onClick={() => clockInMember(m.id)}
+              onClick={() => m.id && void clockInMember(m.id)}
               disabled={saving || geoLoading}
               className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-accent/30 transition-all text-left disabled:opacity-50"
             >
@@ -242,7 +273,7 @@ export default function MemberEntriesPage() {
         </div>
         <select className="input w-auto min-w-40" value={selectedMember} onChange={e => setSelectedMember(e.target.value)}>
           <option value="">All Members</option>
-          {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+          {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
         </select>
       </div>
 
@@ -252,7 +283,7 @@ export default function MemberEntriesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800">
-                {["Member", "Clock In", "Clock Out", "Duration", "Location", "Note", ""].map(h => (
+                {["Member", "Clock In", "Clock Out", "Duration", "Location", "Note", ""].map((h) => (
                   <th key={h} className="table-header px-5 py-3 text-left">{h}</th>
                 ))}
               </tr>
@@ -267,18 +298,18 @@ export default function MemberEntriesPage() {
                     <p className="text-slate-500">No entries found</p>
                   </td>
                 </tr>
-              ) : filteredEntries.map(e => {
-                const duration = e.punch_out
+              ) : filteredEntries.map((e) => {
+                const duration = e.punch_out && e.punch_in
                   ? differenceInMinutes(parseISO(e.punch_out), parseISO(e.punch_in))
                   : null;
                 return (
                   <tr key={e.id} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
                     <td className="px-5 py-3">
-                      <p className="text-white font-medium">{e.members?.full_name}</p>
-                      <p className="text-slate-500 text-xs">{e.members?.department || "—"}</p>
+                      <p className="text-white font-medium">{getRelatedMember(e)?.full_name}</p>
+                      <p className="text-slate-500 text-xs">{getRelatedMember(e)?.department || "—"}</p>
                     </td>
                     <td className="px-5 py-3 font-mono text-slate-300 text-xs">
-                      {format(parseISO(e.punch_in), "MMM d, HH:mm")}
+                      {e.punch_in ? format(parseISO(e.punch_in), "MMM d, HH:mm") : "—"}
                     </td>
                     <td className="px-5 py-3 font-mono text-slate-300 text-xs">
                       {e.punch_out ? format(parseISO(e.punch_out), "MMM d, HH:mm") : <span className="badge-green badge">Active</span>}
@@ -293,7 +324,7 @@ export default function MemberEntriesPage() {
                     <td className="px-5 py-3">
                       {!e.punch_out && (
                         <button
-                          onClick={() => clockOutMember(e.id, e.punch_in)}
+                          onClick={() => e.id && e.punch_in && void clockOutMember(e.id, e.punch_in)}
                           className="text-xs text-danger hover:text-danger/80 bg-danger/10 hover:bg-danger/20 border border-danger/20 px-2 py-1 rounded-lg transition-colors"
                         >
                           Clock Out

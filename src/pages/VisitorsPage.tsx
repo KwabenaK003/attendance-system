@@ -168,14 +168,14 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }: Visitor
       <form onSubmit={handleSubmit} className="card relative z-10 w-full max-w-2xl p-6 animate-fade-up max-h-[calc(100vh-3rem)] overflow-y-auto">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
-            <h3 className="font-display text-lg font-semibold text-white">
+            <h3 className="font-display text-lg font-semibold text-ink">
               {initial?.id ? "Edit Visitor" : "Register Visitor"}
             </h3>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-ink-muted">
               Capture the visitor and assign the member who is hosting them.
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 transition-colors hover:text-white" aria-label="Close visitor form">
+          <button onClick={onClose} className="text-ink-muted transition-colors hover:text-ink" aria-label="Close visitor form">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -238,7 +238,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }: Visitor
                 </div>
                 <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-800">
                   {filteredMembers.length === 0 ? (
-                    <p className="px-3 py-3 text-sm text-slate-500">No host members match your search.</p>
+                    <p className="px-3 py-3 text-sm text-ink-muted">No host members match your search.</p>
                   ) : filteredMembers.map((member) => (
                     <button
                       key={member.id}
@@ -248,7 +248,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }: Visitor
                         setHostSearch(member.full_name || "");
                         setHostPickerOpen(false);
                       }}
-                      className="block w-full px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                      className="block w-full px-3 py-2 text-left text-sm text-ink transition-colors hover:bg-page-bg"
                     >
                       {member.full_name}
                     </button>
@@ -567,8 +567,11 @@ export default function VisitorsPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display text-2xl font-bold text-white">Visitors</h2>
-          <p className="mt-1 text-sm text-slate-400">Track guests, their companies, their visit purpose, and the member hosting them.</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+            Visitors
+          </div>
+          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Visitors</h2>
+          <p className="mt-1 text-sm text-ink-muted">Track guests, their companies, their visit purpose, and the member hosting them.</p>
         </div>
         <button
           onClick={() => {
@@ -601,13 +604,13 @@ export default function VisitorsPage() {
       )}
 
       {members.length === 0 && !loading && !schemaError && (
-        <div className="rounded-2xl border border-slate-700 bg-slate-900/60 px-4 py-3 text-sm text-slate-300">
+        <div className="rounded-2xl border border-border bg-page-bg px-4 py-3 text-sm text-ink-muted">
           Add at least one member first so each visitor can be assigned to a host.
         </div>
       )}
 
       <div className="relative animate-fade-up">
-        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
         <input
           className="input pl-10"
           placeholder="Search visitor, company, purpose, or host member..."
@@ -620,7 +623,7 @@ export default function VisitorsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-border">
                 <th className="table-header px-5 py-3 text-left">Visitor</th>
                 <th className="table-header px-5 py-3 text-left">Company</th>
                 <th className="table-header px-5 py-3 text-left">Purpose of Visit</th>
@@ -632,13 +635,13 @@ export default function VisitorsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-slate-500">Loading...</td>
+                  <td colSpan={6} className="py-10 text-center text-ink-muted">Loading...</td>
                 </tr>
               ) : filteredVisitors.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center">
-                    <UserRound className="mx-auto mb-2 h-8 w-8 text-slate-700" />
-                    <p className="text-slate-500">
+                    <UserRound className="mx-auto mb-2 h-8 w-8 text-ink-muted" />
+                    <p className="text-ink-muted">
                       {search ? "No visitors match your search." : "No visitors registered yet."}
                     </p>
                   </td>
@@ -653,31 +656,31 @@ export default function VisitorsPage() {
                     .toUpperCase() || "?";
 
                   return (
-                    <tr key={visitor.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                    <tr key={visitor.id} className="border-b border-border/60 hover:bg-page-bg">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-accent/15 bg-gradient-to-br from-accent/20 to-accent/5 font-display text-xs font-bold text-accent">
                             {initials}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate font-medium text-white">{visitor.full_name}</p>
-                            <p className="truncate text-xs text-slate-500">
+                            <p className="truncate font-medium text-ink">{visitor.full_name}</p>
+                            <p className="truncate text-xs text-ink-muted">
                               {visitor.email || visitor.phone || "No contact details"}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-slate-300">
+                      <td className="px-5 py-4 text-ink-muted">
                         <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-slate-500" />
+                          <Building2 className="h-4 w-4 text-ink-muted" />
                           <span>{visitor.company_name || "-"}</span>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-slate-300">{visitor.purpose_of_visit || "-"}</td>
-                      <td className="px-5 py-4 text-slate-300">{Array.isArray(visitor.host_member) ? visitor.host_member[0]?.full_name || "-" : visitor.host_member?.full_name || "-"}</td>
-                      <td className="px-5 py-4 text-slate-400">
+                      <td className="px-5 py-4 text-ink-muted">{visitor.purpose_of_visit || "-"}</td>
+                      <td className="px-5 py-4 text-ink-muted">{Array.isArray(visitor.host_member) ? visitor.host_member[0]?.full_name || "-" : visitor.host_member?.full_name || "-"}</td>
+                      <td className="px-5 py-4 text-ink-muted">
                         <p>{format(new Date(String(visitor.visit_date || visitor.created_at)), "dd MMM yyyy")}</p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-ink-muted">
                           {visitor.created_at ? format(new Date(visitor.created_at), "hh:mm a") : "-"}
                         </p>
                       </td>
@@ -688,7 +691,7 @@ export default function VisitorsPage() {
                               setEditingVisitor(buildFormStateFromVisitor(visitor));
                               setShowForm(true);
                             }}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink"
                             aria-label={`Edit ${visitor.full_name}`}
                           >
                             <Pencil className="h-4 w-4" />
@@ -729,8 +732,8 @@ export default function VisitorsPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
           <div className="card relative z-10 w-full max-w-sm p-6 text-center animate-fade-up">
             <Trash2 className="mx-auto mb-3 h-10 w-10 text-danger" />
-            <h3 className="mb-1 font-display text-lg font-semibold text-white">Delete Visitor?</h3>
-            <p className="mb-5 text-sm text-slate-400">
+            <h3 className="mb-1 font-display text-lg font-semibold text-ink">Delete Visitor?</h3>
+            <p className="mb-5 text-sm text-ink-muted">
               This will remove {deleteTarget.full_name}&apos;s visitor record.
             </p>
             <div className="flex gap-3">
