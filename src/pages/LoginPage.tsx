@@ -46,28 +46,28 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-page-bg px-4 py-8 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl place-items-center gap-8">
         <div className="w-full max-w-md animate-fade-up">
           <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-accent/25 bg-accent/10">
-              <Building2 className="h-5 w-5 text-accent" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
+              <Building2 className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="font-display text-lg font-semibold text-white">Attendance Management</h1>
-              <p className="text-xs text-slate-500">Workforce attendance operations</p>
+              <h1 className="font-display text-lg font-semibold text-ink">Attendance Management</h1>
+              <p className="text-xs text-ink-muted">Workforce attendance operations</p>
             </div>
           </div>
 
           <div className="card p-6 sm:p-7">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h2 className="font-display text-2xl font-semibold text-white">Sign in</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-400">
+                <h2 className="font-display text-2xl font-semibold text-ink">Sign in</h2>
+                <p className="mt-2 text-sm leading-6 text-ink-muted">
                   Use your organization account to continue.
                 </p>
               </div>
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
                 <ShieldCheck className="h-5 w-5" />
               </div>
             </div>
@@ -113,7 +113,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPass((current) => !current)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted transition-colors hover:text-ink"
                     aria-label={showPass ? "Hide password" : "Show password"}
                   >
                     {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -140,7 +140,7 @@ export default function LoginPage() {
               </button>
             </form>
 
-            <p className="mt-6 text-center text-xs text-slate-600">
+            <p className="mt-6 text-center text-xs text-ink-muted/70">
               Attendance Management © {new Date().getFullYear()}
             </p>
           </div>

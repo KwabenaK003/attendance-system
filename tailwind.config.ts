@@ -8,6 +8,17 @@ const config = {
         mono: ["'JetBrains Mono'", "monospace"],
       },
       colors: {
+        // New palette
+        "page-bg": "#F4F7FC",
+        "card-bg": "#fafafa",
+        sidebar: "#07091f",
+        "sidebar-text": "#fafafa",
+        primary: "#2563eb",
+        "primary-hover": "#1d4ed8",
+        ink: "#080402",
+        "ink-muted": "#08040299",
+        border: "#E2E8F0",
+
         slate: {
           950: "#0a0f1e",
           900: "#0f172a",
@@ -15,24 +26,24 @@ const config = {
           700: "#334155",
         },
         accent: {
-          DEFAULT: "#00e5be",
-          dim: "#00b596",
-          glow: "rgba(0,229,190,0.15)",
+          DEFAULT: "#2563eb",
+          dim: "#1d4ed8",
+          glow: "rgba(37,99,235,0.15)",
         },
         danger: "#ff4d6d",
         warn: "#fbbf24",
-        info: "#60a5fa",
+        info: "#2563eb",
       },
       backgroundImage: {
         "grid-pattern":
-          "linear-gradient(rgba(0,229,190,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,190,0.03) 1px, transparent 1px)",
+          "linear-gradient(rgba(37,99,235,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.03) 1px, transparent 1px)",
       },
       backgroundSize: {
         grid: "40px 40px",
       },
       boxShadow: {
-        glow: "0 0 20px rgba(0,229,190,0.2)",
-        "glow-lg": "0 0 40px rgba(0,229,190,0.3)",
+        glow: "0 0 20px rgba(37,99,235,0.2)",
+        "glow-lg": "0 0 40px rgba(37,99,235,0.3)",
       },
       animation: {
         "pulse-slow": "pulse 3s ease-in-out infinite",

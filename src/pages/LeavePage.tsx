@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, differenceInCalendarDays } from "date-fns";
-import { ArrowLeft, Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical, Search, UserRound, Copy } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle, Copy, Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical, Search, UserRound } from "lucide-react";
 import { hasManagementAccess } from "../lib/workforce";
 import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 
@@ -15,6 +15,7 @@ const STATUS_BADGE = {
 };
 const OTHER_LEAVE_TYPE_MARKER = "__OTHER_LEAVE_TYPE__:";
 const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
+type ToastMessage = { type: "success" | "error"; message: string };
 
 function splitLeaveMember(reason: string | null | undefined = "") {
   const lines = String(reason || "").split("\n");
@@ -61,6 +62,63 @@ function buildLeaveReason(type: string, otherType: string, reason: string, membe
   ].filter(Boolean).join("\n");
 }
 
+function Toast({ toast }: { toast: ToastMessage | null }) {
+  if (!toast) return null;
+
+  return (
+    <div className="fixed right-6 top-6 z-[140] animate-fade-up">
+      <div
+        className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur ${
+          toast.type === "error"
+            ? "border-danger/30 bg-danger/10 text-danger"
+            : "border-primary/30 bg-card-bg text-ink"
+        }`}
+      >
+        {toast.type === "error"
+          ? <AlertCircle className="h-4 w-4" />
+          : <CheckCircle className="h-4 w-4 text-primary" />}
+        <p className="text-sm">{toast.message}</p>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({
+  request,
+  onCancel,
+  onConfirm,
+}: {
+  request: LooseRow | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!request) return null;
+
+  const label = request.type === "other"
+    ? splitLeaveReason(request.reason).otherType || "Other leave"
+    : `${request.type || "leave"} leave`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
+      <div className="card relative z-10 w-full max-w-sm animate-fade-up p-6 text-center">
+        <Trash2 className="mx-auto mb-3 h-10 w-10 text-danger" />
+        <h3 className="mb-1 font-display text-lg font-semibold text-ink">Delete Leave Request?</h3>
+        <p className="mb-2 text-sm text-ink-muted">{label}</p>
+        <p className="mb-5 text-sm text-ink-muted">This cannot be undone.</p>
+        <div className="flex gap-3">
+          <button type="button" onClick={onConfirm} className="btn-danger flex-1 justify-center">
+            Delete
+          </button>
+          <button type="button" onClick={onCancel} className="btn-secondary flex-1 justify-center">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LeavePage() {
   const { profile } = useAuth();
   const navigate = useNavigate();
@@ -77,6 +135,8 @@ export default function LeavePage() {
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [requestLinkCopied, setRequestLinkCopied] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [requestToDelete, setRequestToDelete] = useState<LooseRow | null>(null);
   const isAdmin = hasManagementAccess(profile?.role);
   const creatingViaRoute = location.pathname === "/leave/new";
   const adminCreateViaRoute = location.pathname === "/leave/admin/new";
@@ -138,6 +198,12 @@ export default function LeavePage() {
     const timeoutId = window.setTimeout(() => setRequestLinkCopied(false), 2200);
     return () => window.clearTimeout(timeoutId);
   }, [requestLinkCopied]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timeoutId = window.setTimeout(() => setToast(null), 2600);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
 
   async function fetchRequests() {
     if (!profile?.id) {
@@ -211,13 +277,14 @@ export default function LeavePage() {
       if (creatingViaRoute) {
         setForm({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
         setMemberPickerOpen(false);
-        window.alert("Your leave request form is sent successfully");
+        setToast({ type: "success", message: "Your leave request was sent successfully." });
         return;
       }
 
       resetForm();
       await fetchRequests();
       navigate("/leave");
+      setToast({ type: "success", message: editingRequestId ? "Leave request updated." : "Leave request submitted." });
     } catch (err) {
       setError((err as Error).message || `Failed to ${editingRequestId ? "update" : "submit"} leave request`);
     } finally {
@@ -244,29 +311,26 @@ export default function LeavePage() {
   }
 
   async function deleteRequest(request: LooseRow) {
-    const isOwnRequest = request.user_id === profile?.id;
-    if (!isOwnRequest && !isAdmin) return;
-
-    const confirmed = window.confirm("Delete this leave request?");
-    if (!confirmed) return;
-
     const { error: deleteError } = await supabase.from("leave_requests").delete().eq("id", request.id);
     if (deleteError) {
       setListError(deleteError.message || "Failed to delete leave request");
       return;
     }
 
+    setRequestToDelete(null);
     if (editingRequestId === request.id) {
       resetForm();
     }
 
     await fetchRequests();
+    setToast({ type: "success", message: "Leave request deleted." });
   }
 
   async function copyLeaveRequestLink() {
     try {
       await copyTextToClipboard(leaveRequestUrl);
       setRequestLinkCopied(true);
+      setToast({ type: "success", message: "Leave request link copied." });
     } catch (copyError) {
       setListError((copyError as Error).message || "Unable to copy leave request link.");
     }
@@ -282,16 +346,36 @@ export default function LeavePage() {
   const selectedRequest = editingViaRoute
     ? requests.find((entry) => String(entry.id) === requestId) || null
     : null;
+  const leaveSummary = {
+    total: requests.length,
+    pending: requests.filter((request) => request.status === "pending").length,
+    approved: requests.filter((request) => request.status === "approved").length,
+    rejected: requests.filter((request) => request.status === "rejected").length,
+  };
+  const overlays = (
+    <>
+      <Toast toast={toast} />
+      <DeleteConfirmModal
+        request={requestToDelete}
+        onCancel={() => setRequestToDelete(null)}
+        onConfirm={() => {
+          if (requestToDelete?.id) {
+            void deleteRequest(requestToDelete);
+          }
+        }}
+      />
+    </>
+  );
 
   const renderRequestForm = ({ standaloneForm = false, showMemberPicker = true } = {}) => (
     <div className="card p-6 animate-fade-up border-accent/20">
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-display text-lg font-semibold text-white">{editingRequestId ? "Edit Leave Request" : "New Leave Request"}</h3>
-          <p className="mt-1 text-sm text-slate-400">Capture the leave type, dates, and reason for this request.</p>
+          <h3 className="font-display text-lg font-semibold text-ink">{editingRequestId ? "Edit Leave Request" : "New Leave Request"}</h3>
+          <p className="mt-1 text-sm text-ink-muted">Capture the leave type, dates, and reason for this request.</p>
         </div>
         {!standaloneForm && (
-          <button onClick={resetForm} className="text-slate-400 hover:text-white" aria-label="Close leave form"><X className="w-5 h-5" /></button>
+          <button onClick={resetForm} className="text-ink-muted hover:text-ink" aria-label="Close leave form"><X className="w-5 h-5" /></button>
         )}
       </div>
       {error && <p className="text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-2 mb-4">{error}</p>}
@@ -392,6 +476,7 @@ export default function LeavePage() {
         <div className="mx-auto max-w-3xl">
           {renderRequestForm({ standaloneForm: true })}
         </div>
+        {overlays}
       </div>
     );
   }
@@ -401,8 +486,8 @@ export default function LeavePage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <h2 className="font-display font-bold text-2xl text-white">New Leave Request</h2>
-            <p className="text-slate-400 text-sm mt-1">Create a leave request for your signed-in account.</p>
+            <h2 className="font-display font-bold text-2xl text-ink">New Leave Request</h2>
+            <p className="text-ink-muted text-sm mt-1">Create a leave request for your signed-in account.</p>
           </div>
           <button onClick={() => navigate("/leave")} className="btn-secondary text-sm">
             <ArrowLeft className="w-4 h-4" />
@@ -411,6 +496,7 @@ export default function LeavePage() {
         </div>
 
         {renderRequestForm({ showMemberPicker: false })}
+        {overlays}
       </div>
     );
   }
@@ -420,10 +506,10 @@ export default function LeavePage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <h2 className="font-display font-bold text-2xl text-white">
+            <h2 className="font-display font-bold text-2xl text-ink">
               Edit Leave Request
             </h2>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-ink-muted text-sm mt-1">
               Update this leave request.
             </p>
           </div>
@@ -434,12 +520,13 @@ export default function LeavePage() {
         </div>
 
         {editingViaRoute && loading ? (
-          <div className="card p-8 text-center text-slate-500">Loading…</div>
+          <div className="card p-8 text-center text-ink-muted">Loading…</div>
         ) : editingViaRoute && !selectedRequest ? (
-          <div className="card p-8 text-center text-slate-500">Leave request not found.</div>
+          <div className="card p-8 text-center text-ink-muted">Leave request not found.</div>
         ) : (
           renderRequestForm()
         )}
+        {overlays}
       </div>
     );
   }
@@ -448,8 +535,11 @@ export default function LeavePage() {
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display font-bold text-2xl text-white">Leave Requests</h2>
-          <p className="text-slate-400 text-sm mt-1">{isAdmin ? "Manage all leave requests" : "Request and track your time off"}</p>
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+            Leave
+          </div>
+          <h2 className="mt-3 font-display font-bold text-2xl text-ink">Leave Requests</h2>
+          <p className="text-ink-muted text-sm mt-1">{isAdmin ? "Manage all leave requests" : "Request and track your time off"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -467,19 +557,39 @@ export default function LeavePage() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 animate-fade-up">
+        <div className="card px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Total</p>
+          <p className="mt-1 font-display text-xl font-semibold text-ink">{leaveSummary.total}</p>
+        </div>
+        <div className="card px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Pending</p>
+          <p className="mt-1 font-display text-xl font-semibold text-warn">{leaveSummary.pending}</p>
+        </div>
+        <div className="card px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Approved</p>
+          <p className="mt-1 font-display text-xl font-semibold text-accent">{leaveSummary.approved}</p>
+        </div>
+        <div className="card px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Rejected</p>
+          <p className="mt-1 font-display text-xl font-semibold text-danger">{leaveSummary.rejected}</p>
+        </div>
+      </div>
+
       {/* Requests list */}
       <div className="space-y-3 animate-fade-up">
         {listError && (
-          <div className="card p-4 text-sm text-danger bg-danger/10 border-danger/20">
+          <div className="card flex items-start gap-2 p-4 text-sm text-danger bg-danger/10 border-danger/20">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
             {listError}
           </div>
         )}
         {loading ? (
-          <div className="card p-8 text-center text-slate-500">Loading…</div>
+          <div className="card p-8 text-center text-ink-muted">Loading…</div>
         ) : requests.length === 0 ? (
           <div className="card p-12 text-center">
             <Calendar className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-            <p className="text-slate-500">No leave requests yet</p>
+            <p className="text-ink-muted">No leave requests yet</p>
           </div>
         ) : (
           requests.map((req) => {
@@ -499,27 +609,27 @@ export default function LeavePage() {
               ? otherType
               : `${req.type} Leave`;
             return (
-              <div key={req.id} className="card p-5 flex items-start gap-4 flex-wrap">
-                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
-                  <Calendar className="w-5 h-5 text-slate-400" />
+              <div key={req.id} className="card flex flex-col gap-4 p-5 sm:flex-row sm:items-start">
+                <div className="w-10 h-10 rounded-xl bg-page-bg border border-border flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-5 h-5 text-accent" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-white font-medium capitalize">{leaveLabel}</span>
+                    <span className="text-ink font-medium capitalize">{leaveLabel}</span>
                     <span className={`badge ${STATUS_BADGE[requestStatus ?? "pending"] || "badge-blue"}`}>{req.status}</span>
                     {(leaveMember.memberName || (isAdmin && leaveProfile?.full_name)) && (
-                      <span className="text-slate-500 text-xs">— {leaveMember.memberName || leaveProfile?.full_name}</span>
+                      <span className="text-ink-muted text-xs">— {leaveMember.memberName || leaveProfile?.full_name}</span>
                     )}
                   </div>
-                  <p className="text-slate-400 text-sm">
+                  <p className="text-ink-muted text-sm">
                     {format(new Date(String(req.start_date)), "MMM d")} – {format(new Date(String(req.end_date)), "MMM d, yyyy")}
-                    <span className="text-slate-500 ml-2">({days} day{days > 1 ? "s" : ""})</span>
+                    <span className="text-ink-muted ml-2">({days} day{days > 1 ? "s" : ""})</span>
                   </p>
-                  {reason && <p className="text-slate-500 text-xs mt-1">{reason}</p>}
+                  {reason && <p className="text-ink-muted text-xs mt-1">{reason}</p>}
                 </div>
-                <div className="flex gap-2 flex-wrap flex-shrink-0 items-start">
+                <div className="flex flex-col gap-2 flex-shrink-0 sm:items-end">
                   {canChangeStatus && (
-                    <>
+                    <div className="flex gap-2 flex-wrap sm:justify-end">
                       <button
                         onClick={() => {
                           if (req.id) {
@@ -548,26 +658,26 @@ export default function LeavePage() {
                       >
                         <XCircle className="w-3.5 h-3.5" /> Reject
                       </button>
-                    </>
+                    </div>
                   )}
                   {(canEdit || canDelete) && (
                     <div data-leave-actions className="relative z-20">
                       <button
                         type="button"
                         onClick={() => setOpenActionMenuId((currentId) => currentId === requestKey ? null : requestKey)}
-                        className="w-10 h-10 rounded-xl border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white flex items-center justify-center"
+                        className="w-10 h-10 rounded-xl border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink flex items-center justify-center"
                         aria-label={`Open actions for ${req.type} leave request`}
                         aria-expanded={openActionMenuId === requestKey}
                       >
                         <MoreVertical className="w-4 h-4" />
                       </button>
                       {openActionMenuId === requestKey && (
-                        <div className="absolute bottom-full right-0 mb-2 z-10 w-36 rounded-xl border border-slate-700 bg-slate-900 p-1.5 shadow-lg shadow-black/30">
+                        <div className="absolute bottom-full right-0 mb-2 z-10 w-36 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
                           {canEdit && (
                             <button
                               type="button"
                               onClick={() => startEditing(req)}
-                              className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-800"
+                              className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink transition-colors hover:bg-page-bg"
                             >
                               <Pencil className="w-4 h-4" /> Edit
                             </button>
@@ -577,7 +687,7 @@ export default function LeavePage() {
                               type="button"
                               onClick={() => {
                                 setOpenActionMenuId(null);
-                                void deleteRequest(req);
+                                setRequestToDelete(req);
                               }}
                               className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10"
                             >
@@ -594,6 +704,7 @@ export default function LeavePage() {
           })
         )}
       </div>
+      {overlays}
     </div>
   );
 }

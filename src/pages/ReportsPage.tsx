@@ -4,13 +4,16 @@ import { supabase } from "../lib/supabase";
 import { format, parseISO, differenceInMinutes, startOfMonth, subMonths } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { Download } from "lucide-react";
-import AttendanceChartsSection from "../components/AttendanceChartsSection";
+import AttendanceChartsSection, { type AttendanceDataPoint } from "../components/AttendanceChartsSection";
 import { buildAttendanceSeries } from "../lib/attendanceAnalytics";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
 
 const COLORS = ["#3b82f6", "#60a5fa", "#fbbf24", "#ff4d6d", "#a78bfa"];
+type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+type MonthRow = { month: string; hours: number };
+type DayRow = { day: DayKey; hours: number };
 
 type ChartTooltipPayload = {
   color?: string;
@@ -31,8 +34,8 @@ function fmt(min: number) {
 const CustomTooltip = ({ active, payload = [], label }: ChartTooltipProps = {}) => {
   if (active && payload?.length) {
     return (
-      <div className="card px-3 py-2 text-sm border-slate-700">
-        <p className="text-slate-400">{label}</p>
+      <div className="card px-3 py-2 text-sm border-border">
+        <p className="text-ink-muted">{label}</p>
         {payload.map((p) => (
           <p key={p.name} style={{ color: p.color }} className="font-semibold">{p.value}h</p>
         ))}
@@ -44,12 +47,15 @@ const CustomTooltip = ({ active, payload = [], label }: ChartTooltipProps = {}) 
 
 export default function ReportsPage() {
   const { profile } = useAuth();
-  const [monthlyData, setMonthlyData] = useState<LooseRow[]>([]);
-  const [byDay, setByDay] = useState<LooseRow[]>([]);
+  const [monthlyData, setMonthlyData] = useState<MonthRow[]>([]);
+  const [byDay, setByDay] = useState<DayRow[]>([]);
   const [stats, setStats] = useState({ total: 0, avg: 0, overtime: 0, days: 0 });
   const [loading, setLoading] = useState(true);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [attendanceOverview, setAttendanceOverview] = useState({ dailyData: [], monthlyData: [] });
+  const [attendanceOverview, setAttendanceOverview] = useState<{
+    dailyData: AttendanceDataPoint[];
+    monthlyData: AttendanceDataPoint[];
+  }>({ dailyData: [], monthlyData: [] });
   const isAdmin = hasManagementAccess(profile?.role);
 
   useEffect(() => { void fetchReports(); }, [profile?.id, isAdmin]);
@@ -144,18 +150,24 @@ export default function ReportsPage() {
 
     if (error || !data) { setLoading(false); return; }
 
-    const pairs = [
+    const pairs: Array<{
+      date: string;
+      month: string;
+      day: DayKey;
+      minutes: number;
+      clockIn: string;
+    }> = [
       ...buildPunchSessions(data).map((session) => ({
         date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
         month: format(parseISO(session.clockIn), "MMM yyyy"),
-        day: format(parseISO(session.clockIn), "EEE"),
+        day: format(parseISO(session.clockIn), "EEE") as DayKey,
         minutes: session.minutes,
         clockIn: session.clockIn,
       })),
       ...buildMemberSessions(memberEntries || []).map((session) => ({
         date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
         month: format(parseISO(session.clockIn), "MMM yyyy"),
-        day: format(parseISO(session.clockIn), "EEE"),
+        day: format(parseISO(session.clockIn), "EEE") as DayKey,
         minutes: session.minutes,
         clockIn: session.clockIn,
       })),
@@ -170,14 +182,15 @@ export default function ReportsPage() {
     setMonthlyData(monthly);
 
     // By day of week
-    const dayMap = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-    const dayCount = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
+    const dayMap: Record<DayKey, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
+    const dayCount: Record<DayKey, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
     pairs.forEach(({ day, minutes }) => {
       dayMap[day] = (dayMap[day] || 0) + minutes;
       dayCount[day] = (dayCount[day] || 0) + 1;
     });
-    const days = Object.entries(dayMap).map(([d, min]) => ({
-      day: d, hours: dayCount[d] ? parseFloat((min / 60 / dayCount[d]).toFixed(1)) : 0,
+    const days = (Object.entries(dayMap) as Array<[DayKey, number]>).map(([d, min]) => ({
+      day: d,
+      hours: dayCount[d] ? parseFloat((min / 60 / dayCount[d]).toFixed(1)) : 0,
     }));
     setByDay(days);
 
@@ -200,12 +213,15 @@ export default function ReportsPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="animate-fade-up">
-        <h2 className="font-display font-bold text-2xl text-white">Reports & Analytics</h2>
-        <p className="text-slate-400 text-sm mt-1">Workforce insights and time analysis</p>
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+          Reports
+        </div>
+        <h2 className="mt-3 font-display font-bold text-2xl text-ink">Reports & Analytics</h2>
+        <p className="text-ink-muted text-sm mt-1">Workforce insights and time analysis</p>
       </div>
 
       {/* This month stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
         {[
           { label: "Total Hours (Month)", value: fmt(stats.total) },
           { label: "Avg Hours/Day", value: fmt(stats.avg) },
@@ -213,8 +229,8 @@ export default function ReportsPage() {
           { label: "Days Worked", value: `${stats.days} days` },
         ].map(({ label, value }) => (
           <div key={label} className="card p-4 text-center">
-            <p className="text-slate-400 text-xs">{label}</p>
-            <p className="font-display font-bold text-xl text-white mt-1">{value}</p>
+            <p className="text-ink-muted text-xs">{label}</p>
+            <p className="font-display font-bold text-xl text-ink mt-1">{value}</p>
           </div>
         ))}
       </div>
@@ -233,15 +249,15 @@ export default function ReportsPage() {
       <div className="grid lg:grid-cols-3 gap-4 animate-fade-up">
         {/* Monthly bars */}
         <div className="card p-5 lg:col-span-2">
-          <h3 className="font-display font-semibold text-white mb-4">Monthly Hours (6 months)</h3>
+          <h3 className="font-display font-semibold text-ink mb-4">Monthly Hours (6 months)</h3>
           {loading ? (
-            <div className="h-48 flex items-center justify-center text-slate-500">Loading…</div>
+            <div className="h-48 flex items-center justify-center text-ink-muted">Loading…</div>
           ) : monthlyData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-500">No data</div>
+            <div className="h-48 flex items-center justify-center text-ink-muted">No data</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(8,4,2,0.06)" />
                 <XAxis dataKey="month" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
@@ -253,17 +269,17 @@ export default function ReportsPage() {
 
         {/* Pie */}
         <div className="card p-5">
-          <h3 className="font-display font-semibold text-white mb-4">This Month Breakdown</h3>
+          <h3 className="font-display font-semibold text-ink mb-4">This Month Breakdown</h3>
           {pieData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-500">No data</div>
+            <div className="h-48 flex items-center justify-center text-ink-muted">No data</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={pieData} cx="50%" cy="45%" innerRadius={50} outerRadius={75} paddingAngle={4} dataKey="value">
                   {pieData.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
                 </Pie>
-                <Legend formatter={(v) => <span className="text-slate-400 text-xs">{v}</span>} />
-                <Tooltip formatter={(v) => fmt(v)} />
+                <Legend formatter={(value: string | number) => <span className="text-ink-muted text-xs">{value}</span>} />
+                <Tooltip formatter={(value: string | number) => fmt(Number(value))} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -272,10 +288,10 @@ export default function ReportsPage() {
 
       {/* By day of week */}
       <div className="card p-5 animate-fade-up">
-        <h3 className="font-display font-semibold text-white mb-4">Average Hours by Day of Week</h3>
+        <h3 className="font-display font-semibold text-ink mb-4">Average Hours by Day of Week</h3>
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={byDay} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(8,4,2,0.06)" />
             <XAxis dataKey="day" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
             <Tooltip content={<CustomTooltip />} />

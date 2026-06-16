@@ -28,7 +28,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { hasManagementAccess } from "../lib/workforce";
-import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
+import { buildMemberSessions, buildPunchSessions, type TimeSession } from "../lib/timeRecords";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -43,19 +43,9 @@ interface CapturedDetails {
 }
 
 /** A resolved attendance session built by buildPunchSessions / buildMemberSessions. */
-interface Session {
-  id: string;
-  source: "punch" | "member";   // discriminator used to build the detail URL
-  personName: string | null;
-  personType: string;
-  clockIn: string;              // ISO timestamp
-  clockOut: string | null;      // ISO timestamp or null if still open
-  minutes: number;
-  note: string | null;
-  capturedIn: CapturedDetails | null;
-  capturedOut: CapturedDetails | null;
-  date?: string;                // injected as "yyyy-MM-dd" after fetch
-}
+type Session = TimeSession & {
+  date?: string;
+};
 
 /** Shape of the assembled detail object for AttendanceLogDetailPage. */
 interface SessionDetail extends Session {
@@ -104,21 +94,21 @@ interface CapturedDetailsCardProps {
   details: CapturedDetails | null | undefined;
 }
 
-function CapturedDetailsCard({ title, details }: CapturedDetailsCardProps): JSX.Element {
+function CapturedDetailsCard({ title, details }: CapturedDetailsCardProps) {
   if (!hasCapturedDetails(details)) {
     return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-sm text-slate-500">
+      <div className="rounded-2xl border border-border bg-page-bg p-4 text-sm text-ink-muted">
         No {title.toLowerCase()} capture details.
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div className="rounded-2xl border border-border bg-page-bg p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
         {title}
       </p>
-      <div className="mt-3 space-y-2 text-sm text-slate-300">
+      <div className="mt-3 space-y-2 text-sm text-ink">
         {details?.deviceName && (
           <p className="flex items-center gap-2">
             <MonitorSmartphone className="h-4 w-4 text-accent" />
@@ -144,10 +134,10 @@ function CapturedDetailsCard({ title, details }: CapturedDetailsCardProps): JSX.
           </p>
         )}
         {details?.verificationMethod && (
-          <p className="text-xs text-slate-400">Method: {details.verificationMethod}</p>
+          <p className="text-xs text-ink-muted">Method: {details.verificationMethod}</p>
         )}
         {details?.recordedAt && (
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             Recorded at {format(parseISO(details.recordedAt), "MMM d, yyyy HH:mm:ss")}
           </p>
         )}
@@ -161,11 +151,11 @@ interface DetailFieldProps {
   value?: string | null;
 }
 
-function DetailField({ label, value }: DetailFieldProps): JSX.Element {
+function DetailField({ label, value }: DetailFieldProps) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/35 px-4 py-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-medium text-white">{value || "—"}</p>
+    <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
+      <p className="text-xs text-ink-muted">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-ink">{value || "—"}</p>
     </div>
   );
 }
@@ -180,7 +170,7 @@ interface AttendanceLogDetailPageProps {
 function AttendanceLogDetailPage({
   source,
   recordId,
-}: AttendanceLogDetailPageProps): JSX.Element {
+}: AttendanceLogDetailPageProps) {
   const navigate = useNavigate();
   const [detail, setDetail]   = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -271,8 +261,11 @@ function AttendanceLogDetailPage({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display text-2xl font-bold text-white">Attendance Details</h2>
-          <p className="mt-1 text-sm text-slate-400">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+            Log Detail
+          </div>
+          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Attendance Details</h2>
+          <p className="mt-1 text-sm text-ink-muted">
             Full person, clock, capture, and notes record.
           </p>
         </div>
@@ -293,7 +286,7 @@ function AttendanceLogDetailPage({
       ) : detail && (
         <div className="card animate-fade-up p-6">
           {/* Person avatar + header */}
-          <div className="mb-6 flex items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/30 p-4">
+          <div className="mb-6 flex items-center gap-4 rounded-2xl border border-border bg-page-bg p-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/20 bg-gradient-to-br from-accent/30 to-accent/10 text-xl font-bold text-accent">
               {(detail.personName ?? detail.person?.full_name ?? "?")
                 .split(" ")
@@ -303,10 +296,10 @@ function AttendanceLogDetailPage({
                 .toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-base font-medium text-white">
+              <p className="truncate text-base font-medium text-ink">
                 {detail.personName ?? detail.person?.full_name ?? "Unknown Person"}
               </p>
-              <p className="truncate text-sm text-slate-500">
+              <p className="truncate text-sm text-ink-muted">
                 {detail.person?.email ?? detail.person?.department ?? "No profile contact details"}
               </p>
               <span className="badge badge-blue mt-2 text-xs">{detail.personType}</span>
@@ -352,12 +345,12 @@ function AttendanceLogDetailPage({
           </div>
 
           {/* Notes */}
-          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/35 p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
+          <div className="mt-6 rounded-2xl border border-border bg-page-bg p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink">
               <StickyNote className="h-4 w-4 text-accent" />
               Notes
             </div>
-            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-300">
+            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-ink-muted">
               {detail.rawNote || detail.note || "No notes recorded."}
             </p>
           </div>
@@ -369,7 +362,7 @@ function AttendanceLogDetailPage({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function TimesheetsPage(): JSX.Element {
+export default function TimesheetsPage() {
   const { profile }               = useAuth();
   const navigate                  = useNavigate();
   const { source, recordId }      = useParams<{ source?: string; recordId?: string }>();
@@ -467,7 +460,7 @@ export default function TimesheetsPage(): JSX.Element {
       }),
       ...buildMemberSessions(memberEntries as Record<string, unknown>[]),
     ]
-      .map((session: Session) => ({
+      .map((session) => ({
         ...session,
         date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
       }))
@@ -548,8 +541,11 @@ export default function TimesheetsPage(): JSX.Element {
       {/* Page header */}
       <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
         <div>
-          <h2 className="font-display font-bold text-2xl text-white">Attendance Log</h2>
-          <p className="text-slate-400 text-sm mt-1">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+            Timesheets
+          </div>
+          <h2 className="mt-3 font-display font-bold text-2xl text-ink">Attendance Log</h2>
+          <p className="text-ink-muted text-sm mt-1">
             {isAdmin
               ? "Staff and member clock activity with details one click away."
               : "Your clock activity with details one click away."}
@@ -564,10 +560,10 @@ export default function TimesheetsPage(): JSX.Element {
       </div>
 
       {/* Month navigator */}
-      <div className="relative flex items-center justify-between card px-5 py-3 animate-fade-up overflow-visible">
+      <div className="relative flex items-center justify-between card-glow px-5 py-3 animate-fade-up overflow-visible">
         <button
           onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="text-ink-muted hover:text-ink transition-colors"
           aria-label="Previous month"
         >
           <ChevronLeft className="w-5 h-5" />
@@ -576,7 +572,7 @@ export default function TimesheetsPage(): JSX.Element {
         <button
           type="button"
           onClick={() => setShowMonthPicker((cur) => !cur)}
-          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 font-display text-lg font-semibold text-white transition-colors hover:bg-slate-800/70"
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 font-display text-lg font-semibold text-ink transition-colors hover:bg-page-bg"
         >
           <CalendarDays className="h-4 w-4 text-accent" />
           {format(currentMonth, "MMMM yyyy")}
@@ -584,7 +580,7 @@ export default function TimesheetsPage(): JSX.Element {
 
         <button
           onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="text-ink-muted hover:text-ink transition-colors"
           aria-label="Next month"
         >
           <ChevronRight className="w-5 h-5" />
@@ -595,7 +591,7 @@ export default function TimesheetsPage(): JSX.Element {
       {showMonthPicker && (
         <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMonthPicker(false)} />
-          <div className="relative w-80 rounded-2xl border border-slate-800 bg-slate-950 p-4 shadow-2xl shadow-black/40">
+          <div className="relative w-80 rounded-2xl border border-border bg-card-bg p-4 shadow-2xl shadow-black/10">
             <p className="label">Select Month &amp; Year</p>
             <div className="grid gap-3">
               <div>
@@ -666,12 +662,12 @@ export default function TimesheetsPage(): JSX.Element {
             {
               label: "Overtime",
               value: formatDuration(overtimeMinutes),
-              color: overtimeMinutes > 0 ? "text-warn" : "text-slate-500",
+              color: overtimeMinutes > 0 ? "text-warn" : "text-ink-muted",
             },
           ] as const
         ).map(({ label, value, color }) => (
           <div key={label} className="card p-4 text-center">
-            <p className="text-slate-400 text-xs">{label}</p>
+            <p className="text-ink-muted text-xs">{label}</p>
             <p className={`font-display font-bold text-xl mt-1 ${color}`}>{value}</p>
           </div>
         ))}
@@ -682,7 +678,7 @@ export default function TimesheetsPage(): JSX.Element {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-border">
                 <th className="table-header px-5 py-3 text-left">Person</th>
                 <th className="table-header px-5 py-3 text-left">Type</th>
                 <th className="table-header px-5 py-3 text-left">Date</th>
@@ -693,7 +689,7 @@ export default function TimesheetsPage(): JSX.Element {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-slate-500">
+                  <td colSpan={5} className="text-center py-12 text-ink-muted">
                     Loading…
                   </td>
                 </tr>
@@ -701,17 +697,17 @@ export default function TimesheetsPage(): JSX.Element {
                 <tr>
                   <td colSpan={5} className="text-center py-12">
                     <Clock className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                    <p className="text-slate-500">No time records for this month</p>
+                    <p className="text-ink-muted">No time records for this month</p>
                   </td>
                 </tr>
               ) : (
                 sessions.map((s) => (
                   <tr
                     key={`${s.source}-${s.id}`}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors"
+                    className="border-b border-border/60 hover:bg-page-bg transition-colors"
                   >
                     {/* Person */}
-                    <td className="px-5 py-3 font-medium text-white">
+                    <td className="px-5 py-3 font-medium text-ink">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/15 bg-accent/10 text-accent">
                           <UserRound className="h-4 w-4" />
@@ -721,20 +717,20 @@ export default function TimesheetsPage(): JSX.Element {
                     </td>
 
                     {/* Type */}
-                    <td className="px-5 py-3 text-slate-400 text-xs">{s.personType}</td>
+                    <td className="px-5 py-3 text-ink-muted text-xs">{s.personType}</td>
 
                     {/* Date */}
-                    <td className="px-5 py-3 font-medium text-white">
+                    <td className="px-5 py-3 font-medium text-ink">
                       {format(parseISO(s.clockIn), "EEE, MMM d")}
                     </td>
 
                     {/* Clock In */}
-                    <td className="px-5 py-3 font-mono text-slate-300">
+                    <td className="px-5 py-3 font-mono text-ink-muted">
                       {format(parseISO(s.clockIn), "HH:mm")}
                     </td>
 
                     {/* Clock Out + detail button */}
-                    <td className="px-5 py-3 font-mono text-slate-300">
+                    <td className="px-5 py-3 font-mono text-ink-muted">
                       <div className="flex items-center justify-between gap-3">
                         <span>
                           {(() => {
@@ -754,7 +750,7 @@ export default function TimesheetsPage(): JSX.Element {
                         </span>
                         <button
                           onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-800/80 text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink"
                           aria-label={`Open details for ${s.personName ?? "Employee"}`}
                         >
                           <MoreVertical className="h-4 w-4" />
