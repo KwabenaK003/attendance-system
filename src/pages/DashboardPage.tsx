@@ -452,20 +452,6 @@ export default function DashboardPage() {
               A quick read on attendance, activity, and leave across the organization.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[420px] lg:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Today</p>
-              <p className="mt-1 font-display text-lg font-semibold text-ink">{stats.todayHours}h</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">This Week</p>
-              <p className="mt-1 font-display text-lg font-semibold text-ink">{stats.weekHours}h</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-page-bg px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Live</p>
-              <p className="mt-1 font-display text-lg font-semibold text-ink">{isAdmin ? "Admin view" : "Personal view"}</p>
-            </div>
-          </div>
         </div>
       </div>
 

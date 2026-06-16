@@ -13,6 +13,7 @@ const STATUS_BADGE = {
   approved: "badge-green",
   rejected: "badge-red",
 };
+const STATUS_FILTERS = ["all", "pending", "approved", "rejected"];
 const OTHER_LEAVE_TYPE_MARKER = "__OTHER_LEAVE_TYPE__:";
 const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
 type ToastMessage = { type: "success" | "error"; message: string };
@@ -137,6 +138,11 @@ export default function LeavePage() {
   const [requestLinkCopied, setRequestLinkCopied] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [requestToDelete, setRequestToDelete] = useState<LooseRow | null>(null);
+
+  // Search/filter state — replaces the stat cards
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
   const isAdmin = hasManagementAccess(profile?.role);
   const creatingViaRoute = location.pathname === "/leave/new";
   const adminCreateViaRoute = location.pathname === "/leave/admin/new";
@@ -216,8 +222,8 @@ export default function LeavePage() {
     setListError("");
 
     try {
-      const membersQuery = supabase.from("members").select("id, full_name").order("full_name", { ascending: true });
-      let q = supabase.from("leave_requests").select("*, profiles!leave_requests_user_id_fkey(full_name)").order("created_at", { ascending: false });
+      const membersQuery = supabase.from("members").select("id, full_name, department").order("full_name", { ascending: true });
+      let q = supabase.from("leave_requests").select("*, profiles!leave_requests_user_id_fkey(full_name, department)").order("created_at", { ascending: false });
       if (!isAdmin) q = q.eq("user_id", profile.id);
 
       const [{ data, error: requestError }, { data: memberRows, error: membersError }] = await Promise.all([q, membersQuery]);
@@ -346,12 +352,27 @@ export default function LeavePage() {
   const selectedRequest = editingViaRoute
     ? requests.find((entry) => String(entry.id) === requestId) || null
     : null;
-  const leaveSummary = {
-    total: requests.length,
-    pending: requests.filter((request) => request.status === "pending").length,
-    approved: requests.filter((request) => request.status === "approved").length,
-    rejected: requests.filter((request) => request.status === "rejected").length,
-  };
+
+  // Filter requests by search query (name, department, leave type) and status
+  const visibleRequests = requests.filter((req) => {
+    if (statusFilter !== "all" && req.status !== statusFilter) {
+      return false;
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+
+    const leaveMember = splitLeaveMember(req.reason);
+    const { otherType } = splitLeaveReason(req.reason);
+    const leaveProfile = req.profiles as { full_name?: string; department?: string } | undefined;
+
+    const name = (leaveMember.memberName || leaveProfile?.full_name || "").toLowerCase();
+    const department = (leaveProfile?.department || "").toLowerCase();
+    const leaveType = (req.type === "other" ? otherType : req.type || "").toString().toLowerCase();
+
+    return name.includes(query) || department.includes(query) || leaveType.includes(query);
+  });
+
   const overlays = (
     <>
       <Toast toast={toast} />
@@ -557,22 +578,16 @@ export default function LeavePage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 animate-fade-up">
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Total</p>
-          <p className="mt-1 font-display text-xl font-semibold text-ink">{leaveSummary.total}</p>
-        </div>
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Pending</p>
-          <p className="mt-1 font-display text-xl font-semibold text-warn">{leaveSummary.pending}</p>
-        </div>
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Approved</p>
-          <p className="mt-1 font-display text-xl font-semibold text-accent">{leaveSummary.approved}</p>
-        </div>
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Rejected</p>
-          <p className="mt-1 font-display text-xl font-semibold text-danger">{leaveSummary.rejected}</p>
+      {/* Search & filter bar — replaces the stat cards */}
+      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+          <input
+            className="input pl-10"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by name, department, or leave type…"
+          />
         </div>
       </div>
 
@@ -586,13 +601,15 @@ export default function LeavePage() {
         )}
         {loading ? (
           <div className="card p-8 text-center text-ink-muted">Loading…</div>
-        ) : requests.length === 0 ? (
+        ) : visibleRequests.length === 0 ? (
           <div className="card p-12 text-center">
             <Calendar className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-            <p className="text-ink-muted">No leave requests yet</p>
+            <p className="text-ink-muted">
+              {requests.length === 0 ? "No leave requests yet" : "No leave requests match your search"}
+            </p>
           </div>
         ) : (
-          requests.map((req) => {
+          visibleRequests.map((req) => {
             const requestKey = String(req.id ?? "");
             const days = differenceInCalendarDays(new Date(String(req.end_date)), new Date(String(req.start_date))) + 1;
             const leaveMember = splitLeaveMember(req.reason);
