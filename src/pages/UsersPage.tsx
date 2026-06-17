@@ -121,7 +121,7 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
             <p className="mt-1 text-sm text-ink-muted">
               {isCreateMode
                 ? "Create an admin sign-in account."
-                : "Update the admin user details tracked by this app. Password changes must be made in Supabase Auth."}
+                : "Update the admin user details and password."}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-ink-muted transition-colors hover:text-ink" aria-label="Close user editor">
@@ -145,32 +145,26 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
             <label className="label">Email *</label>
             <input className="input" type="email" value={form.email} onChange={set("email")} placeholder="jane@company.com" required />
           </div>
-          {isCreateMode ? (
-            <div>
-              <label className="label">Password *</label>
-              <div className="relative">
-                <input
-                  className="input pr-12"
-                  type={showPassword ? "text" : "password"}
-                  value={form.password}
-                  onChange={set("password")}
-                  placeholder="Create a password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
+          <div>
+            <label className="label">{isCreateMode ? "Password *" : "New Password (Optional)"}</label>
+            <div className="relative">
+              <input
+                className="input pr-12"
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={set("password")}
+                placeholder={isCreateMode ? "Create a password" : "Leave blank to keep current"}
+                required={isCreateMode}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
-          ) : (
-            <div className="rounded-xl border border-warn/20 bg-warn/10 px-4 py-3 text-sm text-warn">
-              Login passwords live in Supabase Auth and cannot be changed from this browser-only admin list.
-            </div>
-          )}
+          </div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -354,12 +348,17 @@ export default function UsersPage() {
       };
 
       if (!SUPABASE_CONFIG_ERROR) {
-        const { error: updateError } = await supabase
-          .from("profiles")
-          .update({ full_name: localUser.full_name, role: "admin" })
-          .eq("id", user.id);
+        const { error: updateError } = await supabase.rpc("update_user_by_admin", {
+          target_user_id: user.id,
+          next_full_name: nextForm.fullName.trim(),
+          next_email: nextForm.email.trim(),
+          next_password: nextForm.password || null
+        });
 
         if (updateError) {
+          if (updateError.message?.includes("function") || updateError.message?.includes("does not exist")) {
+            throw new Error("Unable to update user. Please execute supabase/admin_user_helpers.sql in the Supabase SQL editor first.");
+          }
           throw updateError;
         }
       }
@@ -367,7 +366,7 @@ export default function UsersPage() {
       upsertLocalUser(localUser);
       setUsers((current) => current.map((entry) => entry.id === user.id ? { ...entry, ...localUser } : entry));
       setEditingUser(null);
-      setSuccess("User details saved. Change login email/password in Supabase Auth or through a backend admin endpoint.");
+      setSuccess("User details and password updated successfully.");
       return {};
     } catch (editError) {
       return { error: editError };
@@ -382,8 +381,13 @@ export default function UsersPage() {
 
     try {
       if (!SUPABASE_CONFIG_ERROR) {
-        const { error: deleteError } = await supabase.from("profiles").delete().eq("id", user.id);
+        const { error: deleteError } = await supabase.rpc("delete_user_by_admin", {
+          target_user_id: user.id
+        });
         if (deleteError) {
+          if (deleteError.message?.includes("function") || deleteError.message?.includes("does not exist")) {
+            throw new Error("Unable to delete user. Please execute supabase/admin_user_helpers.sql in the Supabase SQL editor first.");
+          }
           throw deleteError;
         }
       }
@@ -394,7 +398,7 @@ export default function UsersPage() {
       setUsers((current) => current.filter((entry) => entry.id !== user.id));
       setDeleteTarget(null);
       setActiveMenuId(null);
-      setSuccess("User removed from the app list. Remove the auth account in Supabase Auth if needed.");
+      setSuccess("User deleted successfully.");
     } catch (deleteError) {
       setError((deleteError as Error).message || "Unable to delete user.");
     }

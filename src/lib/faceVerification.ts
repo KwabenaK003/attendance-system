@@ -1,5 +1,5 @@
 const REFERENCE_SIZE = 32;
-const MATCH_THRESHOLD = 0.86;
+const MATCH_THRESHOLD = 0.8;
 const FACE_MATCH_THRESHOLD = 0.8;
 
 export type FaceHashReference = {
