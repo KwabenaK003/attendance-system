@@ -68,6 +68,8 @@ export type SystemSettings = {
   };
 };
 
+export type EmailSettings = SystemSettings["email"];
+
 type PartialDeep<T> = {
   [K in keyof T]?: T[K] extends object ? PartialDeep<T[K]> : T[K];
 };

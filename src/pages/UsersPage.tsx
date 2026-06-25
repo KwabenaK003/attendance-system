@@ -19,6 +19,21 @@ type UserEditorForm = {
   password: string;
 };
 
+type AdminUserUpdateResponse = {
+  user?: {
+    id: string;
+    email?: string | null;
+    user_metadata?: {
+      full_name?: string | null;
+    } | null;
+  };
+  profile?: {
+    id: string;
+    full_name?: string | null;
+    role?: string | null;
+  };
+};
+
 type UserEditorModalProps = {
   user: LooseRow | null;
   saving: boolean;
@@ -121,7 +136,7 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
             <p className="mt-1 text-sm text-ink-muted">
               {isCreateMode
                 ? "Create an admin sign-in account."
-                : "Update the admin user details tracked by this app. Password changes must be made in Supabase Auth."}
+                : "Update the admin user details tracked by this app. Leave password blank to keep the current password."}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-ink-muted transition-colors hover:text-ink" aria-label="Close user editor">
@@ -167,8 +182,24 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-warn/20 bg-warn/10 px-4 py-3 text-sm text-warn">
-              Login passwords live in Supabase Auth and cannot be changed from this browser-only admin list.
+            <div>
+              <label className="label">New Password</label>
+              <div className="relative">
+                <input
+                  className="input pr-12"
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={set("password")}
+                  placeholder="Leave blank to keep current password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((current) => !current)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -336,7 +367,7 @@ export default function UsersPage() {
   }
 
   async function handleEditUser(user: LooseRow | null, nextForm: UserEditorForm) {
-    if (!user) {
+    if (!user?.id) {
       return { error: new Error("Selected user is missing.") };
     }
 
@@ -345,29 +376,54 @@ export default function UsersPage() {
     setSuccess("");
 
     try {
+      const fullName = nextForm.fullName.trim();
+      const email = nextForm.email.trim();
+      const password = nextForm.password.trim();
       const localUser = {
         id: user.id,
-        full_name: nextForm.fullName.trim(),
-        email: nextForm.email.trim(),
+        full_name: fullName,
+        email,
         role: "admin",
         created_at: user.created_at || new Date().toISOString(),
       };
 
       if (!SUPABASE_CONFIG_ERROR) {
-        const { error: updateError } = await supabase
-          .from("profiles")
-          .update({ full_name: localUser.full_name, role: "admin" })
-          .eq("id", user.id);
+        const payload: {
+          userId: string;
+          fullName: string;
+          email: string;
+          password?: string;
+        } = {
+          userId: user.id,
+          fullName,
+          email,
+        };
+
+        if (password) {
+          payload.password = password;
+        }
+
+        const { data, error: updateError } = await supabase.functions.invoke<AdminUserUpdateResponse>(
+          "admin-user-update",
+          { body: payload }
+        );
 
         if (updateError) {
           throw updateError;
         }
+
+        if (data?.user?.id && data.user.id !== user.id) {
+          throw new Error("The Supabase auth update returned an unexpected user.");
+        }
+
+        localUser.full_name = data?.profile?.full_name || data?.user?.user_metadata?.full_name || fullName;
+        localUser.email = data?.user?.email ?? email;
       }
 
       upsertLocalUser(localUser);
       setUsers((current) => current.map((entry) => entry.id === user.id ? { ...entry, ...localUser } : entry));
       setEditingUser(null);
-      setSuccess("User details saved. Change login email/password in Supabase Auth or through a backend admin endpoint.");
+      setSuccess("User details saved in Supabase Auth and profiles.");
       return {};
     } catch (editError) {
       return { error: editError };

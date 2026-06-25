@@ -27,6 +27,7 @@ import {
   WEEKLY_SUMMARY_DAYS,
 } from "../lib/systemSettings";
 import { DEPARTMENT_OPTIONS, getRoleLabel } from "../lib/workforce";
+import { sendTestEmail } from "../lib/emailTest";
 
 const TAB_CONFIG = [
   { id: "general",       label: "General",          description: "", icon: Settings2    },
@@ -201,6 +202,7 @@ export default function SettingsPage() {
   const [error, setError]                       = useState("");
   const [toast, setToast]                       = useState<ToastMessage | null>(null);
   const [smtpTesting, setSmtpTesting]           = useState(false);
+  const [testRecipientAddress, setTestRecipientAddress] = useState("");
 
   useEffect(() => {
     setAccountForm({
@@ -315,14 +317,21 @@ export default function SettingsPage() {
     setSmtpTesting(true);
     setError("");
     try {
-      const { smtpHost, smtpPort, smtpUsername } = systemSettings.email;
-      if (!smtpHost || !smtpPort || !smtpUsername) {
-        throw new Error("Enter the SMTP host, port, and username before running a test.");
+      const { smtpHost, smtpPort, smtpUsername, smtpPassword } = systemSettings.email;
+      if (!smtpHost || !smtpPort || !smtpUsername || !smtpPassword) {
+        throw new Error("Enter the SMTP host, port, username, and password before running a test.");
       }
-      const result = await saveSystemSettings(systemSettings);
-      setStorageMode(result.storageMode);
-      setRemoteNotice(result.remoteError || "");
-      setToast({ type: "success", message: "SMTP settings validated and saved. Connect a backend mailer endpoint to send live test emails." });
+      if (!testRecipientAddress.trim()) {
+        throw new Error("Enter an email address to send the test to.");
+      }
+
+      // Persist settings first so the saved config matches what we're testing
+      const saveResult = await saveSystemSettings(systemSettings);
+      setStorageMode(saveResult.storageMode);
+      setRemoteNotice(saveResult.remoteError || "");
+
+      const result = await sendTestEmail(systemSettings.email, testRecipientAddress);
+      setToast({ type: "success", message: result.message });
     } catch (smtpError) {
       setError((smtpError as Error).message || "Unable to test SMTP settings.");
       setToast({ type: "error", message: (smtpError as Error).message || "Unable to test SMTP settings." });
@@ -436,13 +445,18 @@ export default function SettingsPage() {
           </Field>
           <ToggleRow label="Welcome Email Toggle" description="Automatically send a welcome message when a new member is added." checked={systemSettings.email.welcomeEmailEnabled} onChange={(checked) => setSystemField("email", "welcomeEmailEnabled", checked)} />
           <div className="rounded-2xl border border-border bg-page-bg p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-ink">Test Email Button</p>
-                <p className="mt-1 text-sm text-ink-muted">Saves the current SMTP configuration and validates it immediately.</p>
-              </div>
+            <p className="text-sm font-medium text-ink">Send Test Email</p>
+            <p className="mt-1 text-sm text-ink-muted">Saves the current SMTP configuration, then sends a real test email to the address below.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <input
+                type="email"
+                className="input flex-1 min-w-[220px]"
+                value={testRecipientAddress}
+                onChange={(e) => setTestRecipientAddress(e.target.value)}
+                placeholder="you@company.com"
+              />
               <button type="button" className="btn-secondary" onClick={handleSendTestEmail} disabled={smtpTesting}>
-                {smtpTesting ? "Testing…" : "Send Test Email"}
+                {smtpTesting ? "Sending…" : "Send Test Email"}
               </button>
             </div>
           </div>

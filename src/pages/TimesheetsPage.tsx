@@ -19,7 +19,6 @@ import {
   Globe,
   MapPin,
   MonitorSmartphone,
-  MoreVertical,
   StickyNote,
   UserRound,
   Wifi,
@@ -704,7 +703,17 @@ export default function TimesheetsPage() {
                 sessions.map((s) => (
                   <tr
                     key={`${s.source}-${s.id}`}
-                    className="border-b border-border/60 hover:bg-page-bg transition-colors"
+                    className="border-b border-border/60 transition-colors hover:bg-page-bg cursor-pointer focus-within:bg-page-bg"
+                    onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`/timesheets/${s.source}/${s.id}`);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Open details for ${s.personName ?? "Employee"}`}
                   >
                     {/* Person */}
                     <td className="px-5 py-3 font-medium text-ink">
@@ -731,31 +740,18 @@ export default function TimesheetsPage() {
 
                     {/* Clock Out + detail button */}
                     <td className="px-5 py-3 font-mono text-ink-muted">
-                      <div className="flex items-center justify-between gap-3">
-                        <span>
-                          {(() => {
-                            const info = clockOutDisplayInfo(s);
-                            if (info.expired || (isExpiredSession(s.clockIn) && !s.clockOut)) {
-                              return (
-                                <span className="badge badge-yellow">Did not clock out</span>
-                              );
-                            }
-                            if (info.active) {
-                              return <span className="badge badge-green">Active</span>;
-                            }
-                            return s.clockOut
-                              ? format(parseISO(s.clockOut), "HH:mm")
-                              : "—";
-                          })()}
-                        </span>
-                        <button
-                          onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink"
-                          aria-label={`Open details for ${s.personName ?? "Employee"}`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </div>
+                      {(() => {
+                        const info = clockOutDisplayInfo(s);
+                        if (info.expired || (isExpiredSession(s.clockIn) && !s.clockOut)) {
+                          return <span className="badge badge-yellow">Did not clock out</span>;
+                        }
+                        if (info.active) {
+                          return <span className="badge badge-green">Active</span>;
+                        }
+                        return s.clockOut
+                          ? format(parseISO(s.clockOut), "HH:mm")
+                          : "—";
+                      })()}
                     </td>
                   </tr>
                 ))

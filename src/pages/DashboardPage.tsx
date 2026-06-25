@@ -157,12 +157,14 @@ function parseTimeToDate(referenceDate: Date, value?: string | null) {
 function buildTodaySummary(
   members: LooseRow[] = [],
   todayMemberEntries: LooseRow[] = [],
+  todayPunches: LooseRow[] = [],
   attendanceSettings: AttendanceSettings = {},
   now = new Date()
 ) {
   const checkInStart = parseTimeToDate(now, attendanceSettings?.officialCheckInTime || "09:00");
   const lateCutoff = new Date(checkInStart);
   lateCutoff.setMinutes(lateCutoff.getMinutes() + Number(attendanceSettings?.lateThresholdMinutes || 0));
+  const todayKey = format(now, "yyyy-MM-dd");
   const firstEntryByMember = new Map<string, LooseRow>();
   for (const entry of todayMemberEntries) {
     if (!entry?.member_id || !entry?.punch_in) {
@@ -178,9 +180,24 @@ function buildTodaySummary(
   const late = Array.from(firstEntryByMember.values()).filter((entry) => (
     entry.punch_in ? parseISO(entry.punch_in) > lateCutoff : false
   )).length;
+  const staffIdsPresentToday = new Set<string>();
+  for (const punch of todayPunches) {
+    if (!punch?.user_id || punch?.type !== "in" || !punch?.timestamp) {
+      continue;
+    }
+
+    const punchTime = parseISO(punch.timestamp);
+    if (Number.isNaN(punchTime.getTime())) {
+      continue;
+    }
+
+    if (format(punchTime, "yyyy-MM-dd") === todayKey) {
+      staffIdsPresentToday.add(punch.user_id);
+    }
+  }
 
   return {
-    presentToday: firstEntryByMember.size,
+    presentToday: firstEntryByMember.size + staffIdsPresentToday.size,
     late,
   };
 }
@@ -273,6 +290,7 @@ export default function DashboardPage() {
       membersResult,
       todayMemberEntriesResult,
       recentMemberEntriesResult,
+      todayPunchesResult,
       recentPunchesResult,
       visitorsResult,
       leaveRequestsResult,
@@ -296,6 +314,14 @@ export default function DashboardPage() {
           .select("id, member_id, punch_in, punch_out, location_name, note, members(full_name)")
           .gte("punch_in", todayStart.toISOString())
           .order("punch_in", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+      isAdmin
+        ? supabase
+          .from("punches")
+          .select("id, user_id, type, timestamp")
+          .gte("timestamp", todayStart.toISOString())
+          .lt("timestamp", new Date(todayStart.getTime() + 24 * 60 * 60 * 1000).toISOString())
+          .order("timestamp", { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       isAdmin
         ? supabase
@@ -368,10 +394,11 @@ export default function DashboardPage() {
     if (isAdmin) {
       const members = membersResult.data || [];
       const todayMemberEntries = todayMemberEntriesResult.data || [];
+      const todayPunches = todayPunchesResult.data || [];
       const recentMemberEntries = recentMemberEntriesResult.data || [];
       const recentPunches = recentPunchesResult.data || [];
       const profileNameById = new Map((profilesResult.data || []).map((entry) => [entry.id, entry.full_name]));
-      const statusSummary = buildTodaySummary(members, todayMemberEntries, attendanceSettings, now);
+      const statusSummary = buildTodaySummary(members, todayMemberEntries, todayPunches, attendanceSettings, now);
 
       if (profilesResult.error) {
         setDashboardError(profilesResult.error.message || "Unable to load dashboard profiles.");
@@ -379,6 +406,8 @@ export default function DashboardPage() {
         setDashboardError(membersResult.error.message || "Unable to load members.");
       } else if (todayMemberEntriesResult.error) {
         setDashboardError(todayMemberEntriesResult.error.message || "Unable to load today's attendance.");
+      } else if (todayPunchesResult.error) {
+        setDashboardError(todayPunchesResult.error.message || "Unable to load today's staff attendance.");
       } else if (recentMemberEntriesResult.error) {
         setDashboardError(recentMemberEntriesResult.error.message || "Unable to load recent member activity.");
       } else if (recentPunchesResult.error) {

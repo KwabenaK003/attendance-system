@@ -442,14 +442,6 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
   }
 
-  /**
-   * Fetches the last record for a person and resolves today's clock status.
-   *
-   * Key logic:
-   *  - If the last open record is from a PREVIOUS calendar day, the person
-   *    did not clock out. We mark the record as expired in the DB and treat
-   *    the person as NOT clocked in for today.
-   */
   async function fetchStatus(person: Person | null): Promise<void> {
     if (!person?.id) { setStatus(null); return; }
 
@@ -477,7 +469,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       return;
     }
 
-    // Staff — punches table
+    // Staff — punches table. A clock-in stays active until a matching clock-out
+    // is recorded, even if it spans multiple days.
     const { data, error } = await supabase
       .from("punches")
       .select("*")
@@ -491,13 +484,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
 
     const lastPunch = (data?.[0] as StaffPunch) ?? null;
-    const resolved  = resolveClockStatus(lastPunch, "staff");
-
-    if (resolved.expired) {
-      void markExpiredSession(supabase, resolved.expiredRecord, "staff");
-    }
-
-    setStatus(resolved.isClockedIn ? (resolved.status as ActiveRecord) : null);
+    setStatus(lastPunch?.type === "in" ? lastPunch : null);
   }
 
   // ── UI actions ────────────────────────────────────────────────
@@ -755,12 +742,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           </div>
         </div>
 
-        {/* Daily reset notice */}
+        {/* Shift notice */}
         <p className="text-xs text-ink-muted mb-6">
-          Clock runs on a{" "}
-          <span className="text-ink font-medium">24-hour daily cycle</span> (midnight reset).
-          If you do not clock out before midnight, your record will be marked as{" "}
-          <span className="text-warn font-medium">Did not clock out</span>.
+          Clock runs continuously until you clock out. There is no automatic
+          clock-out at midnight.
         </p>
 
         {/* Person search (standalone/kiosk) */}
@@ -872,8 +857,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                   )}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Must clock out before midnight or this session will be marked as{" "}
-                  <span className="text-warn">Did not clock out</span>.
+                  This session stays active until a clock-out is recorded.
                 </p>
               </div>
             ) : (
