@@ -136,7 +136,7 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
             <p className="mt-1 text-sm text-ink-muted">
               {isCreateMode
                 ? "Create an admin sign-in account."
-                : "Update the admin user details tracked by this app. Leave password blank to keep the current password."}
+                : "Update the admin user details tracked by this app. Password changes must be made in Supabase Auth."}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-ink-muted transition-colors hover:text-ink" aria-label="Close user editor">
@@ -182,24 +182,8 @@ function UserEditorModal({ user, saving, onClose, onSave }: UserEditorModalProps
               </div>
             </div>
           ) : (
-            <div>
-              <label className="label">New Password</label>
-              <div className="relative">
-                <input
-                  className="input pr-12"
-                  type={showPassword ? "text" : "password"}
-                  value={form.password}
-                  onChange={set("password")}
-                  placeholder="Leave blank to keep current password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
+            <div className="rounded-xl border border-warn/20 bg-warn/10 px-4 py-3 text-sm text-warn">
+              Login passwords live in Supabase Auth and cannot be changed from this browser-only admin list.
             </div>
           )}
         </div>
@@ -388,27 +372,15 @@ export default function UsersPage() {
       };
 
       if (!SUPABASE_CONFIG_ERROR) {
-        const payload: {
-          userId: string;
-          fullName: string;
-          email: string;
-          password?: string;
-        } = {
-          userId: user.id,
-          fullName,
-          email,
-        };
-
-        if (password) {
-          payload.password = password;
-        }
-
-        const { data, error: updateError } = await supabase.functions.invoke<AdminUserUpdateResponse>(
-          "admin-user-update",
-          { body: payload }
-        );
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({ full_name: localUser.full_name, role: "admin" })
+          .eq("id", user.id);
 
         if (updateError) {
+          if (updateError.message?.includes("function") || updateError.message?.includes("does not exist")) {
+            throw new Error("Unable to update user. Please execute supabase/admin_user_helpers.sql in the Supabase SQL editor first.");
+          }
           throw updateError;
         }
 
@@ -423,7 +395,7 @@ export default function UsersPage() {
       upsertLocalUser(localUser);
       setUsers((current) => current.map((entry) => entry.id === user.id ? { ...entry, ...localUser } : entry));
       setEditingUser(null);
-      setSuccess("User details saved in Supabase Auth and profiles.");
+      setSuccess("User details saved. Change login email/password in Supabase Auth or through a backend admin endpoint.");
       return {};
     } catch (editError) {
       return { error: editError };
@@ -438,8 +410,13 @@ export default function UsersPage() {
 
     try {
       if (!SUPABASE_CONFIG_ERROR) {
-        const { error: deleteError } = await supabase.from("profiles").delete().eq("id", user.id);
+        const { error: deleteError } = await supabase.rpc("delete_user_by_admin", {
+          target_user_id: user.id
+        });
         if (deleteError) {
+          if (deleteError.message?.includes("function") || deleteError.message?.includes("does not exist")) {
+            throw new Error("Unable to delete user. Please execute supabase/admin_user_helpers.sql in the Supabase SQL editor first.");
+          }
           throw deleteError;
         }
       }
@@ -450,7 +427,7 @@ export default function UsersPage() {
       setUsers((current) => current.filter((entry) => entry.id !== user.id));
       setDeleteTarget(null);
       setActiveMenuId(null);
-      setSuccess("User removed from the app list. Remove the auth account in Supabase Auth if needed.");
+      setSuccess("User deleted successfully.");
     } catch (deleteError) {
       setError((deleteError as Error).message || "Unable to delete user.");
     }
