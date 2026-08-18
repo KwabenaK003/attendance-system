@@ -49,7 +49,21 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const DEFAULT_SIGNED_IN_ROLE = "admin";
+const DEFAULT_SIGNED_IN_ROLE = "employee";
+
+function hasFutureIssuedToken(session: Session | null) {
+  const token = session?.access_token;
+  if (!token) return false;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1] || "")) as { iat?: number };
+    // Allow a small amount of clock skew, but reject a token that cannot be
+    // valid for this browser. This can happen after a restored/stale session.
+    return typeof payload.iat === "number" && payload.iat > Math.floor(Date.now() / 1000) + 60;
+  } catch {
+    return false;
+  }
+}
 
 function isMissingProfileColumnError(error: unknown) {
   return /(company_name|face_reference)/i.test((error as { message?: string } | null)?.message || "");
@@ -66,7 +80,7 @@ function buildResolvedProfile(authUser: User | null | undefined, currentProfile:
     ...currentProfile,
     id: currentProfile?.id ?? authUser?.id ?? null,
     full_name: currentProfile?.full_name || getFallbackFullName(authUser),
-    role: DEFAULT_SIGNED_IN_ROLE,
+    role: currentProfile?.role || authUser?.user_metadata?.role || DEFAULT_SIGNED_IN_ROLE,
     department: currentProfile?.department ?? authUser?.user_metadata?.department ?? "",
     company_name: currentProfile?.company_name ?? authUser?.user_metadata?.company_name ?? "",
     face_reference: currentProfile?.face_reference ?? authUser?.user_metadata?.face_reference ?? null,
@@ -105,8 +119,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      void handleSession(session);
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      if (error || hasFutureIssuedToken(session)) {
+        console.warn("Clearing an invalid Supabase session.", error?.message || "JWT issued in the future");
+        await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+        await handleSession(null);
+        return;
+      }
+
+      await handleSession(session);
+    }).catch((error) => {
+      console.error("Unable to restore Supabase session", error);
+      setUser(null);
+      setProfile(null);
+      setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -180,23 +206,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const resolvedProfile = await fetchProfile(data.user.id, data.user);
-      if (resolvedProfile?.id) {
-        await supabase
-          .from("profiles")
-          .update({ role: DEFAULT_SIGNED_IN_ROLE })
-          .eq("id", resolvedProfile.id);
-      }
-
-      const { data: updatedAuth } = await supabase.auth.updateUser({
-        data: {
-          ...data.user.user_metadata,
-          role: DEFAULT_SIGNED_IN_ROLE,
-        },
-      });
-      const updatedUser = updatedAuth?.user || data.user;
-      setUser(updatedUser);
-      setProfile(buildResolvedProfile(updatedUser, { ...resolvedProfile, role: DEFAULT_SIGNED_IN_ROLE }));
-      return { data: { ...data, user: updatedUser }, error: null };
+      setUser(data.user);
+      setProfile(resolvedProfile);
+      return { data, error: null };
     } catch (profileError) {
       await supabase.auth.signOut();
       return { data, error: profileError };
@@ -255,7 +267,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: user.id,
       full_name: typeof updates.full_name === "string" ? updates.full_name : nextProfile?.full_name || getFallbackFullName(user),
       department: typeof updates.department === "string" ? updates.department : nextProfile?.department || "",
-      role: typeof updates.role === "string" ? updates.role : nextProfile?.role || DEFAULT_SIGNED_IN_ROLE,
+      // Role changes are administrator-controlled. Never allow an account owner
+      // to elevate their own role from the profile settings screen.
+      role: nextProfile?.role || DEFAULT_SIGNED_IN_ROLE,
       company_name: typeof updates.company_name === "string" ? updates.company_name : nextProfile?.company_name || "",
       face_reference: updates.face_reference !== undefined ? updates.face_reference : nextProfile?.face_reference || null,
       hourly_rate: typeof updates.hourly_rate === "number" ? updates.hourly_rate : Number(nextProfile?.hourly_rate || 0),

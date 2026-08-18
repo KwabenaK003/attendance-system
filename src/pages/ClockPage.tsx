@@ -14,11 +14,16 @@ import {
   captureVideoFrame,
   createFaceReference,
   normalizeFaceReference,
+  measureFrameMotion,
   waitForVideoReady,
 } from "../lib/faceVerification";
 import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
 import { resolveClockStatus, markExpiredSession } from "../lib/dailyClockReset";
+import { createClientEventId, installOfflineSyncListener, queueOfflinePunch, syncOfflinePunches } from "../lib/offlineClock";
+import { registerDevice } from "../lib/device";
+import { writeAuditLog } from "../lib/audit";
+import { getActiveShiftWindow, getWindowForPunch, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
 
 type SessionProfile = {
   id: string | null;
@@ -83,6 +88,7 @@ interface PunchNoteParams {
 }
 
 interface InsertPunchPayload {
+  client_event_id?: string;
   user_id: string;
   type: "in" | "out";
   timestamp: string;
@@ -94,6 +100,8 @@ interface InsertPunchPayload {
   network_name: string | null;
   verification_method: string;
   note: string;
+  shift_type?: "morning" | "evening";
+  shift_date?: string;
 }
 
 interface InsertPunchResult {
@@ -259,7 +267,7 @@ async function insertPunchRecord(
   if (!first.error) return { usedFallbackColumns: false };
 
   const msg = first.error.message ?? "";
-  if (!/(device_name|ip_address|verification_method|network_name)/i.test(msg)) {
+  if (!/(device_name|ip_address|verification_method|network_name|client_event_id)/i.test(msg)) {
     throw first.error;
   }
 
@@ -269,6 +277,7 @@ async function insertPunchRecord(
     ip_address: _i,
     verification_method: _v,
     network_name: _n,
+    client_event_id: _c,
     ...fallback
   } = payload;
 
@@ -299,6 +308,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const [faceBusy, setFaceBusy]             = useState<boolean>(false);
   const [facePreview, setFacePreview]       = useState<string | null>(null);
   const [stationLinkCopied, setStationLinkCopied] = useState<boolean>(false);
+  const [deviceBlocked, setDeviceBlocked] = useState<string>("");
+  const [currentShift, setCurrentShift] = useState<ShiftWindow | null>(null);
 
   const people         = sortPeople([...staffEmployees, ...members]);
   const selfPerson     = buildFallbackEmployee(profile);
@@ -345,6 +356,39 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     if (standalone) void loadPeople();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, standalone]);
+
+  useEffect(() => {
+    if (!standalone) return undefined;
+    void registerDevice("Attendance Kiosk").catch((error) => setDeviceBlocked((error as Error).message || "This kiosk device is unavailable."));
+    void syncOfflinePunches();
+    return installOfflineSyncListener((result) => {
+      if (result.synced) setMessage({ type: "success", text: `${result.synced} offline punch${result.synced === 1 ? "" : "es"} synchronized.` });
+    });
+  }, [standalone]);
+
+  // Prevent the next person at a shared tablet from inheriting the previous
+  // employee selection or an open camera after a period of inactivity.
+  useEffect(() => {
+    if (!standalone) return undefined;
+    let timeoutId = 0;
+    const reset = () => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        setSelectedPersonKey("");
+        setSearchTerm("");
+        setFacePreview(null);
+        setMessage(null);
+        stopFaceCamera();
+      }, 90_000);
+    };
+    const events = ["pointerdown", "keydown", "touchstart"] as const;
+    events.forEach((event) => window.addEventListener(event, reset));
+    reset();
+    return () => {
+      window.clearTimeout(timeoutId);
+      events.forEach((event) => window.removeEventListener(event, reset));
+    };
+  }, [standalone]);
 
   // Fetch clock status whenever person or auth changes
   useEffect(() => {
@@ -445,46 +489,91 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   async function fetchStatus(person: Person | null): Promise<void> {
     if (!person?.id) { setStatus(null); return; }
 
+    const scheduleColumn = person.kind === "member" ? "member_id" : "user_id";
+    const scheduleResult = await supabase
+      .from("employee_schedules")
+      .select("id, user_id, member_id, week_start, weekday, shift_type, start_time, end_time")
+      .eq(scheduleColumn, person.id);
+    const rows = (scheduleResult.data || []) as EmployeeSchedule[];
+    const now = new Date();
+    const activeWindow = getActiveShiftWindow(rows, person.id, now);
+    setCurrentShift(activeWindow);
+
     if (person.kind === "member") {
       const { data, error } = await supabase
         .from("member_entries")
         .select("*")
         .eq("member_id", person.id)
         .order("punch_in", { ascending: false })
-        .limit(1);
+        .limit(5);
 
       if (error) {
         setMessage({ type: "error", text: error.message || "Failed to load clock status" });
         return;
       }
 
-      const lastEntry = (data?.[0] as MemberEntry) ?? null;
-      const resolved  = resolveClockStatus(lastEntry, "member");
-
-      if (resolved.expired) {
-        void markExpiredSession(supabase, resolved.expiredRecord, "member");
+      const entries = (data || []) as MemberEntry[];
+      const lastEntry = entries[0] ?? null;
+      const entryWindow = lastEntry ? getWindowForPunch(rows, person.id, lastEntry.punch_in) : null;
+      if (lastEntry && !lastEntry.punch_out && entryWindow && now > entryWindow.end) {
+        await supabase.from("member_entries").update({
+          punch_out: entryWindow.end.toISOString(),
+          hours: 0,
+          note: `${lastEntry.note || ""} | AUTO: did_not_clock_out`,
+        }).eq("id", lastEntry.id).is("punch_out", null);
+        setStatus(null);
+        return;
       }
-
+      if (!activeWindow || !lastEntry || lastEntry.punch_in < activeWindow.start.toISOString()) {
+        setStatus(null);
+        return;
+      }
+      const resolved = resolveClockStatus(lastEntry, "member");
+      if (resolved.expired) void markExpiredSession(supabase, resolved.expiredRecord, "member");
       setStatus(resolved.isClockedIn ? (resolved.status as ActiveRecord) : null);
       return;
     }
 
-    // Staff — punches table. A clock-in stays active until a matching clock-out
-    // is recorded, even if it spans multiple days.
+    // Staff status is resolved inside the employee's scheduled shift window.
     const { data, error } = await supabase
       .from("punches")
       .select("*")
       .eq("user_id", person.id)
       .order("timestamp", { ascending: false })
-      .limit(1);
+      .limit(5);
 
     if (error) {
       setMessage({ type: "error", text: error.message || "Failed to load clock status" });
       return;
     }
 
-    const lastPunch = (data?.[0] as StaffPunch) ?? null;
-    setStatus(lastPunch?.type === "in" ? lastPunch : null);
+    const punches = (data || []) as StaffPunch[];
+    const lastPunch = punches[0] ?? null;
+    if (lastPunch?.type === "in") {
+      const punchWindow = getWindowForPunch(rows, person.id, lastPunch.timestamp);
+      if (punchWindow && now > punchWindow.end) {
+        const alreadyClosed = punches.some((punch) => punch.type === "out" && punch.note?.includes("AUTO: did_not_clock_out"));
+        if (!alreadyClosed) {
+          await supabase.from("punches").insert({
+            user_id: person.id,
+            type: "out",
+            timestamp: punchWindow.end.toISOString(),
+            shift_type: punchWindow.shiftType,
+            shift_date: punchWindow.anchorDate,
+            note: "AUTO: did_not_clock_out",
+            location_name: null,
+            latitude: null,
+            longitude: null,
+          });
+        }
+        setStatus(null);
+        return;
+      }
+    }
+    const inWindow = activeWindow
+      ? punches.find((punch) => punch.timestamp >= activeWindow.start.toISOString() && punch.timestamp <= activeWindow.end.toISOString())
+      : null;
+    setStatus(inWindow?.type === "in" ? inWindow : null);
   }
 
   // ── UI actions ────────────────────────────────────────────────
@@ -566,6 +655,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       const device    = getDeviceMetadata();
       const network   = getNetworkMetadata();
       const type: "in" | "out" = status ? "out" : "in";
+      const clientEventId = createClientEventId();
+      if (!currentShift) {
+        throw new Error("This employee has no active shift scheduled right now.");
+      }
       const note = buildPunchNote({
         person,
         similarity,
@@ -576,6 +669,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       });
 
       if (person.kind === "member") {
+        if (!navigator.onLine) throw new Error("Member clocking requires a connection. Employee kiosk punches can be queued offline.");
         const activeEntry = status as MemberEntry | null;
         if (activeEntry?.id) {
           // Clock out
@@ -604,7 +698,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           if (error) throw error;
         }
       } else {
-        const result = await insertPunchRecord({
+        const punchPayload: InsertPunchPayload = {
+          client_event_id: clientEventId,
           user_id:             person.id,
           type,
           timestamp:           new Date().toISOString(),
@@ -616,12 +711,22 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           network_name:        network.networkName,
           verification_method: "face_clock",
           note,
-        });
+          shift_type: currentShift?.shiftType,
+          shift_date: currentShift?.anchorDate,
+        };
+        if (!navigator.onLine) {
+          await queueOfflinePunch({ ...punchPayload, client_event_id: clientEventId, queued_at: new Date().toISOString(), verification_method: "face_clock_offline" });
+          setMessage({ type: "success", text: `${person.full_name ?? "Employee"} ${type} queued securely for synchronization.` });
+          setFacePreview(null);
+          return;
+        }
+        const result = await insertPunchRecord(punchPayload);
+        void writeAuditLog("clock_punch", "punch", clientEventId, { user_id: person.id, type, verification_method: punchPayload.verification_method });
         setMessage({
           type: "success",
           text: result.usedFallbackColumns
             ? `${person.full_name ?? "Employee"} clocked ${type}. Device/network saved in note.`
-            : `${person.full_name ?? "Employee"} successfully clocked ${type}.`,
+            : `${person.full_name ?? "Employee"} successfully clocked ${type} (${shiftLabel(currentShift)}).`,
         });
       }
 
@@ -666,8 +771,17 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     try {
       const video = videoRef.current;
       if (!video) throw new Error("Camera element not found.");
+      const firstPhoto = captureVideoFrame(video);
+      await new Promise((resolve) => window.setTimeout(resolve, 850));
       const photo      = captureVideoFrame(video);
+      const motion     = await measureFrameMotion(firstPhoto, photo);
       const liveRef    = await createFaceReference(photo);
+      if (!selectedFaceReference.hasFace || !liveRef.hasFace) {
+        throw new Error("Face detection is required. Re-enroll the person in good lighting.");
+      }
+      if (motion < 0.015) {
+        throw new Error("Please move your head slightly and try again so the kiosk can verify liveness.");
+      }
       const comparison = compareFaceReferences(selectedFaceReference, liveRef);
       setFacePreview(photo);
       if (!comparison.matched) {
@@ -701,6 +815,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         standalone ? "max-w-5xl px-4 py-6 sm:px-6" : "max-w-4xl"
       }`}
     >
+      {deviceBlocked && standalone && (
+        <div className="rounded-2xl border border-danger/30 bg-danger/10 px-5 py-4 text-danger">{deviceBlocked}</div>
+      )}
       <div className="animate-fade-up">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
           Time Clock
@@ -744,8 +861,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
 
         {/* Shift notice */}
         <p className="text-xs text-ink-muted mb-6">
-          Clock runs continuously until you clock out. There is no automatic
-          clock-out at midnight.
+          {currentShift ? `${shiftLabel(currentShift)} · closes at ${format(currentShift.end, "MMM d, HH:mm")}` : "No active shift is scheduled for this employee right now."}
         </p>
 
         {/* Person search (standalone/kiosk) */}
