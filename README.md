@@ -47,6 +47,16 @@ npm run build
 npm run preview
 ```
 
+## Tablet kiosk deployment
+
+The application is installable as a PWA on Android tablets. Open the deployed URL in Chrome, sign in with a management account, open `/clock/station?mode=kiosk`, and use **Install app** from the browser menu. The kiosk route is restricted to management roles and registers the tablet as a device.
+
+Before enabling production use, run `supabase/production_hardening.sql` after the existing Supabase migrations. This creates license, device, and audit tables, adds offline punch deduplication, protects role changes, and applies license-aware punch policies. Insert the customer license key into `public.licenses`, then activate it from `/license`.
+
+The same migration creates the week-specific employee/member schedule table. Administrators choose a person and week from **Schedules**, then assign each day manually: morning shifts run from 00:00 through 23:59, while evening shifts run from 18:00 through 12:00 the following day. Expired open punches are closed with `AUTO: did_not_clock_out` and appear as **Did not clock out** in the Attendance Log.
+
+Offline employee punches are stored in the tablet's IndexedDB and synchronized when the connection returns. Member punches still require connectivity because they update an existing member session record.
+
 ## Tech Stack
 - **Frontend**: React 18, React Router v6
 - **Styling**: Tailwind CSS v4, custom design system

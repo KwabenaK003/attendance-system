@@ -14,6 +14,10 @@ import VisitorsPage from "./pages/VisitorsPage";
 import UsersPage from "./pages/UsersPage";
 import { getSafeRedirectPath, withRedirect } from "./lib/authRedirect";
 import { hasManagementAccess } from "./lib/workforce";
+import LicenseGate from "./components/LicenseGate";
+import LicensePage from "./pages/LicensePage";
+import AdminControlsPage from "./pages/AdminControlsPage";
+import SchedulesPage from "./pages/SchedulesPage";
 
 function LoadingScreen() {
   return (
@@ -23,7 +27,7 @@ function LoadingScreen() {
   );
 }
 
-function RequireAuth({ children, adminOnly = false, withLayout = true }: { children: ReactNode; adminOnly?: boolean; withLayout?: boolean }) {
+function RequireAuth({ children, adminOnly = false, withLayout = true, enforceLicense = true }: { children: ReactNode; adminOnly?: boolean; withLayout?: boolean; enforceLicense?: boolean }) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
@@ -33,7 +37,8 @@ function RequireAuth({ children, adminOnly = false, withLayout = true }: { child
     return <Navigate to={withRedirect("/login", redirectPath)} replace />;
   }
   if (adminOnly && !hasManagementAccess(profile?.role)) return <Navigate to="/dashboard" replace />;
-  return withLayout ? <Layout>{children}</Layout> : children;
+  const content = withLayout ? <Layout>{children}</Layout> : children;
+  return enforceLicense ? <LicenseGate>{content}</LicenseGate> : content;
 }
 
 function AuthPageRoute() {
@@ -46,13 +51,21 @@ function AuthPageRoute() {
   return <LoginPage />;
 }
 
+function RequireKioskAccess({ children }: { children: ReactNode }) {
+  const { profile, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!hasManagementAccess(profile?.role)) return <Navigate to="/dashboard" replace />;
+  return <LicenseGate>{children}</LicenseGate>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<AuthPageRoute />} />
+      <Route path="/license" element={<RequireAuth withLayout={false} enforceLicense={false}><LicensePage /></RequireAuth>} />
       <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-      <Route path="/clock/station" element={<RequireAuth withLayout={false}><ClockPage standalone /></RequireAuth>} />
+      <Route path="/clock/station" element={<RequireKioskAccess><ClockPage standalone /></RequireKioskAccess>} />
       <Route path="/clock" element={<RequireAuth><ClockPage /></RequireAuth>} />
       <Route path="/timesheets" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
       <Route path="/timesheets/:source/:recordId" element={<RequireAuth><TimesheetsPage /></RequireAuth>} />
@@ -66,6 +79,8 @@ function AppRoutes() {
       <Route path="/members" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/visitors" element={<RequireAuth><VisitorsPage /></RequireAuth>} />
       <Route path="/users" element={<RequireAuth adminOnly><UsersPage /></RequireAuth>} />
+      <Route path="/admin-controls" element={<RequireAuth adminOnly><AdminControlsPage /></RequireAuth>} />
+      <Route path="/schedules" element={<RequireAuth adminOnly><SchedulesPage /></RequireAuth>} />
       <Route path="/employees" element={<Navigate to="/members" replace />} />
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

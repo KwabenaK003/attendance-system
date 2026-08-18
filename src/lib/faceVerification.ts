@@ -234,6 +234,24 @@ export function captureVideoFrame(videoElement: HTMLVideoElement): string {
   return canvas.toDataURL("image/jpeg", 0.92);
 }
 
+export function measureFrameMotion(firstDataUrl: string, secondDataUrl: string): Promise<number> {
+  return Promise.all([loadImage(firstDataUrl), loadImage(secondDataUrl)]).then(([first, second]) => {
+    const canvas = createCanvas(48, 48);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas is not available");
+    ctx.drawImage(first, 0, 0, 48, 48);
+    const a = ctx.getImageData(0, 0, 48, 48).data;
+    ctx.clearRect(0, 0, 48, 48);
+    ctx.drawImage(second, 0, 0, 48, 48);
+    const b = ctx.getImageData(0, 0, 48, 48).data;
+    let changed = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > 45) changed += 1;
+    }
+    return changed / (48 * 48);
+  });
+}
+
 export function waitForVideoReady(videoElement: HTMLVideoElement | null): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!videoElement) {

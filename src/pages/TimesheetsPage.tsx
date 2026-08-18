@@ -404,6 +404,8 @@ export default function TimesheetsPage() {
     if (!profile || source || recordId) return;
     setLoading(true);
 
+    await supabase.rpc("close_expired_shift_sessions");
+
     const start = startOfMonth(currentMonth);
     const end   = endOfMonth(currentMonth);
 

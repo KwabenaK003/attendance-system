@@ -59,6 +59,9 @@ export type Database = {
           ip_address: Nullable<string>;
           network_name: Nullable<string>;
           verification_method: Nullable<string>;
+          client_event_id: Nullable<string>;
+          shift_type: Nullable<"morning" | "evening">;
+          shift_date: Nullable<string>;
           note: Nullable<string>;
           created_at: string;
         },
@@ -74,6 +77,9 @@ export type Database = {
           ip_address?: Nullable<string>;
           network_name?: Nullable<string>;
           verification_method?: Nullable<string>;
+          client_event_id?: Nullable<string>;
+          shift_type?: Nullable<"morning" | "evening">;
+          shift_date?: Nullable<string>;
           note?: Nullable<string>;
           created_at?: string;
         }
@@ -238,6 +244,22 @@ export type Database = {
       is_admin_or_manager: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      validate_current_license: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
+      activate_license: {
+        Args: { license_key_input: string };
+        Returns: Json;
+      };
+      has_active_license: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      close_expired_shift_sessions: {
+        Args: Record<string, never>;
+        Returns: number;
       };
     };
     Enums: Record<string, never>;

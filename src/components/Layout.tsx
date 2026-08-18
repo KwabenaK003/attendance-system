@@ -24,6 +24,8 @@ const navItems = [
   { to: "/visitors", icon: UserRound, label: "Visitors" },
   { to: "/settings", icon: Settings, label: "Settings" },
   { to: "/users", icon: UserPlus, label: "Users" },
+  { to: "/admin-controls", icon: ClipboardList, label: "Admin Controls" },
+  { to: "/schedules", icon: Calendar, label: "Schedules" },
 ];
 
 type NotificationTone = "default" | "success" | "warning" | "info";
