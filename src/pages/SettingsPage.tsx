@@ -23,6 +23,7 @@ import {
   loadSystemSettings,
   normalizeSystemSettings,
   saveSystemSettings,
+  emitAppNotification,
   WEEK_DAYS,
   WEEKLY_SUMMARY_DAYS,
 } from "../lib/systemSettings";
@@ -293,6 +294,7 @@ export default function SettingsPage() {
               : profile.face_reference || null,
         });
         setAccountForm((current) => ({ ...current, faceEnrollment: null }));
+        emitAppNotification("Account updated", "Your account details were changed successfully.");
         setToast({ type: "success", message: "Account settings saved." });
       } else {
         const result = await saveSystemSettings(systemSettings);

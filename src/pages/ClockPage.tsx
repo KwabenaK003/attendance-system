@@ -26,6 +26,7 @@ import { registerDevice } from "../lib/device";
 import { writeAuditLog } from "../lib/audit";
 import { getActiveShiftWindow, getWeekStart, getWindowForPunch, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
 import { kioskGetPeople, kioskGetSchedule, kioskGetStatus, kioskIsConfigured, kioskPunchMember, kioskPunchStaff, kioskUrl } from "../lib/kiosk";
+import { defaultSystemSettings, loadSystemSettings, type SystemSettings } from "../lib/systemSettings";
 
 type SessionProfile = {
   id: string | null;
@@ -314,6 +315,23 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const [deviceBlocked, setDeviceBlocked] = useState<string>("");
   const [currentShift, setCurrentShift] = useState<ShiftWindow | null>(null);
   const [scheduleConfigured, setScheduleConfigured] = useState<boolean | null>(null);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(defaultSystemSettings);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadSystemSettings().then((result) => {
+      if (!cancelled) setSystemSettings(result.settings);
+    });
+    const handleSettingsUpdate = (event: Event) => {
+      const next = (event as CustomEvent<SystemSettings>).detail;
+      if (next) setSystemSettings(next);
+    };
+    window.addEventListener("system-settings-updated", handleSettingsUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("system-settings-updated", handleSettingsUpdate);
+    };
+  }, []);
 
   const people         = sortPeople([...staffEmployees, ...members]);
   const selfPerson     = buildFallbackEmployee(profile);
@@ -682,6 +700,22 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     setLoading(true);
     setMessage(null);
     try {
+      const type: "in" | "out" = status ? "out" : "in";
+      const now = new Date();
+      const weekday = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][now.getDay()];
+      const isConfiguredWorkDay = systemSettings.general.workDays.includes(weekday as typeof systemSettings.general.workDays[number]);
+      if (type === "in" && !isConfiguredWorkDay && !systemSettings.attendance.weekendCheckIns) {
+        throw new Error("Check-ins are disabled outside the configured work days.");
+      }
+      if (type === "in") {
+        const [hours, minutes] = systemSettings.general.officialCheckInWindow.split(":").map(Number);
+        const earliestCheckIn = new Date(now);
+        earliestCheckIn.setHours(hours || 0, minutes || 0, 0, 0);
+        earliestCheckIn.setMinutes(earliestCheckIn.getMinutes() - systemSettings.attendance.earlyCheckInGraceMinutes);
+        if (now < earliestCheckIn) {
+          throw new Error(`Check-in opens at ${systemSettings.general.officialCheckInWindow} (with the configured grace period).`);
+        }
+      }
       const [locResult, ipResult] = await Promise.allSettled([
         getLocation(),
         getPublicIpAddress(),
@@ -690,7 +724,6 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       const ipAddress = ipResult.status === "fulfilled" ? (ipResult.value as string | null) : null;
       const device    = getDeviceMetadata();
       const network   = getNetworkMetadata();
-      const type: "in" | "out" = status ? "out" : "in";
       const clientEventId = createClientEventId();
       if (!currentShift) {
         if (person.kind === "member" && !scheduleConfigured) {
@@ -764,6 +797,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         });
       }
 
+      if (person.kind === "member") {
+        void writeAuditLog("clock_punch", "member_entry", person.id, { type, person_name: person.full_name });
+      }
       setFacePreview(null);
       await fetchStatus(person);
 
@@ -828,7 +864,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       if (motion < 0.015) {
         throw new Error("Please move your head slightly and try again so the kiosk can verify liveness.");
       }
-      const comparison = compareFaceReferences(selectedFaceReference, liveRef);
+      const comparison = compareFaceReferences(selectedFaceReference, liveRef, systemSettings.general.faceRecognitionThreshold);
       setFacePreview(photo);
       if (!comparison.matched) {
         throw new Error(
