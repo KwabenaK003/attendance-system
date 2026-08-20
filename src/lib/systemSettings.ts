@@ -244,6 +244,14 @@ function emitSettingsUpdated(settings: SystemSettings): void {
   window.dispatchEvent(new CustomEvent("system-settings-updated", { detail: settings }));
 }
 
+export function emitAppNotification(title: string, body: string): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("app-notification", {
+      detail: { title, body, timestamp: new Date().toISOString() },
+    }));
+  }
+}
+
 function canUseRemoteStorage() {
   return !SUPABASE_CONFIG_ERROR && !readSessionFlag(REMOTE_DISABLED_KEY);
 }
@@ -328,6 +336,7 @@ export async function saveSystemSettings(nextSettings: PartialDeep<SystemSetting
   const normalized = normalizeSystemSettings(nextSettings);
   persistLocalSettings(normalized);
   emitSettingsUpdated(normalized);
+  emitAppNotification("Settings updated", "System settings were changed and are now active.");
 
   if (!canUseRemoteStorage()) {
     return { settings: normalized, storageMode: "local" };

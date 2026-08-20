@@ -190,7 +190,7 @@ export async function createFaceReference(dataUrl: string): Promise<FaceHashRefe
   };
 }
 
-export function compareFaceReferences(savedReference: unknown, liveReference: unknown) {
+export function compareFaceReferences(savedReference: unknown, liveReference: unknown, configuredThreshold?: number) {
   const normalizedSavedReference = normalizeFaceReference(savedReference);
   const normalizedLiveReference = normalizeFaceReference(liveReference);
 
@@ -208,7 +208,10 @@ export function compareFaceReferences(savedReference: unknown, liveReference: un
   }
 
   const similarity = totalBits ? 1 - (mismatches / totalBits) : 0;
-  const threshold = normalizedSavedReference.hasFace && normalizedLiveReference.hasFace ? FACE_MATCH_THRESHOLD : MATCH_THRESHOLD;
+  const defaultThreshold = normalizedSavedReference.hasFace && normalizedLiveReference.hasFace ? FACE_MATCH_THRESHOLD : MATCH_THRESHOLD;
+  const threshold = typeof configuredThreshold === "number"
+    ? Math.min(1, Math.max(0, configuredThreshold))
+    : defaultThreshold;
 
   return {
     similarity,

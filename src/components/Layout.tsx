@@ -61,6 +61,7 @@ type NotificationState = {
   latestLeaveRequest: LatestLeaveRequest | null;
   pendingLeaveCount: number;
   error: string;
+  latestAction?: { title: string; body: string; timestamp: string } | null;
 };
 
 function NotificationRow({ icon: Icon, title, body, tone = "default" }: NotificationRowProps) {
@@ -101,6 +102,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     latestLeaveRequest: null,
     pendingLeaveCount: 0,
     error: "",
+    latestAction: null,
   });
   const notificationRef = useRef<HTMLDivElement | null>(null);
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -121,7 +123,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const loadNotificationState = useCallback(async ({ silent = false } = {}) => {
     if (!profile?.id) {
-      setNotificationState({
+      setNotificationState((current) => ({ ...current,
         loading: false,
         latestPunch: null,
         latestMemberActivity: null,
@@ -129,7 +131,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         latestLeaveRequest: null,
         pendingLeaveCount: 0,
         error: "",
-      });
+      }));
       return;
     }
 
@@ -184,7 +186,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       const latestMemberActivity = sortTimeActivity(buildMemberActivity(recentMemberEntries || []))[0] || null;
 
-      setNotificationState({
+      setNotificationState((current) => ({ ...current,
         loading: false,
         latestPunch: latestPunch?.[0] || null,
         latestMemberActivity,
@@ -192,7 +194,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         latestLeaveRequest: latestLeaveRequest?.[0] || null,
         pendingLeaveCount: pendingRequests?.length || 0,
         error: "",
-      });
+      }));
     } catch (error) {
       setNotificationState((current) => ({
         loading: false,
@@ -205,6 +207,23 @@ export default function Layout({ children }: { children: ReactNode }) {
       }));
     }
   }, [profile?.id, isAdmin]);
+
+  useEffect(() => {
+    function handleAppNotification(event: Event) {
+      const detail = (event as CustomEvent<{ title?: string; body?: string; timestamp?: string }>).detail;
+      if (!detail?.title || !detail.body) return;
+      setNotificationState((current) => ({
+        ...current,
+        latestAction: {
+          title: detail.title as string,
+          body: detail.body as string,
+          timestamp: detail.timestamp || new Date().toISOString(),
+        },
+      }));
+    }
+    window.addEventListener("app-notification", handleAppNotification);
+    return () => window.removeEventListener("app-notification", handleAppNotification);
+  }, []);
 
   useEffect(() => {
     if (!notificationsOpen) {
@@ -321,6 +340,16 @@ export default function Layout({ children }: { children: ReactNode }) {
   }, [profile?.id, isAdmin, loadNotificationState]);
 
   const notifications: NotificationItem[] = [];
+
+  if (notificationState.latestAction?.timestamp) {
+    notifications.push({
+      id: `action-${notificationState.latestAction.timestamp}`,
+      icon: CheckCircle2,
+      title: notificationState.latestAction.title,
+      body: `${notificationState.latestAction.body} ${formatDistanceToNow(new Date(notificationState.latestAction.timestamp), { addSuffix: true })}.`,
+      tone: "success",
+    });
+  }
 
   if (!profile?.department) {
     notifications.push({
