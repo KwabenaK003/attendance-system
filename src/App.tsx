@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
@@ -18,6 +18,7 @@ import LicenseGate from "./components/LicenseGate";
 import LicensePage from "./pages/LicensePage";
 import AdminControlsPage from "./pages/AdminControlsPage";
 import SchedulesPage from "./pages/SchedulesPage";
+import { kioskIsConfigured } from "./lib/kiosk";
 
 function LoadingScreen() {
   return (
@@ -52,10 +53,16 @@ function AuthPageRoute() {
 }
 
 function RequireKioskAccess({ children }: { children: ReactNode }) {
+  const [searchParams] = useSearchParams();
   const { profile, loading } = useAuth();
+  if (searchParams.get("token") && kioskIsConfigured()) return <LicenseGateByKiosk>{children}</LicenseGateByKiosk>;
   if (loading) return <LoadingScreen />;
   if (!hasManagementAccess(profile?.role)) return <Navigate to="/dashboard" replace />;
   return <LicenseGate>{children}</LicenseGate>;
+}
+
+function LicenseGateByKiosk({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }
 
 function AppRoutes() {

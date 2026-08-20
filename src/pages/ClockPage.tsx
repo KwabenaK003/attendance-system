@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { supabase } from "../lib/supabase";
 import { getDeviceMetadata, getNetworkMetadata, getPublicIpAddress } from "../lib/clockMetadata";
+import { useFaceApi } from "../hooks/useFaceApi";
 import {
   compareFaceReferences,
   captureVideoFrame,
@@ -23,7 +24,8 @@ import { resolveClockStatus, markExpiredSession } from "../lib/dailyClockReset";
 import { createClientEventId, installOfflineSyncListener, queueOfflinePunch, syncOfflinePunches } from "../lib/offlineClock";
 import { registerDevice } from "../lib/device";
 import { writeAuditLog } from "../lib/audit";
-import { getActiveShiftWindow, getWindowForPunch, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
+import { getActiveShiftWindow, getWeekStart, getWindowForPunch, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
+import { kioskGetPeople, kioskGetSchedule, kioskGetStatus, kioskIsConfigured, kioskPunchMember, kioskPunchStaff, kioskUrl } from "../lib/kiosk";
 
 type SessionProfile = {
   id: string | null;
@@ -291,6 +293,7 @@ async function insertPunchRecord(
 export default function ClockPage({ standalone = false }: ClockPageProps) {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
+  const { ready: faceApiReady, loading: faceApiLoading, waitForBlink } = useFaceApi();
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -310,6 +313,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const [stationLinkCopied, setStationLinkCopied] = useState<boolean>(false);
   const [deviceBlocked, setDeviceBlocked] = useState<string>("");
   const [currentShift, setCurrentShift] = useState<ShiftWindow | null>(null);
+  const [scheduleConfigured, setScheduleConfigured] = useState<boolean | null>(null);
 
   const people         = sortPeople([...staffEmployees, ...members]);
   const selfPerson     = buildFallbackEmployee(profile);
@@ -337,7 +341,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const showSearchResults =
     Boolean(normalizedQuery) &&
     normalizedQuery !== (selectedPerson?.full_name?.trim().toLowerCase() ?? "");
-  const stationUrl = buildShareUrl("/clock/station");
+  const stationUrl = kioskIsConfigured() ? kioskUrl("/clock/station") : buildShareUrl("/clock/station");
 
   // Station link copy reset
   useEffect(() => {
@@ -359,7 +363,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
 
   useEffect(() => {
     if (!standalone) return undefined;
-    void registerDevice("Attendance Kiosk").catch((error) => setDeviceBlocked((error as Error).message || "This kiosk device is unavailable."));
+    if (!kioskIsConfigured()) void registerDevice("Attendance Kiosk").catch((error) => setDeviceBlocked((error as Error).message || "This kiosk device is unavailable."));
     void syncOfflinePunches();
     return installOfflineSyncListener((result) => {
       if (result.synced) setMessage({ type: "success", text: `${result.synced} offline punch${result.synced === 1 ? "" : "es"} synchronized.` });
@@ -430,6 +434,23 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   // ── Data loaders ─────────────────────────────────────────────
 
   async function loadPeople(): Promise<void> {
+    if (standalone && kioskIsConfigured()) {
+      setPeopleLoading(true);
+      const { data, error } = await kioskGetPeople();
+      if (error) setMessage({ type: "error", text: error.message || "Unable to load kiosk people." });
+      const kioskPeople = ((data || []) as Array<Record<string, unknown>>).map((person) => ({
+        id: String(person.id),
+        kind: person.kind === "member" ? "member" as const : "staff" as const,
+        full_name: person.full_name as string | null,
+        role: person.role as string | null,
+        department: person.department as string | null,
+        face_reference: person.face_reference,
+      }));
+      setStaffEmployees(sortPeople(kioskPeople.filter((person) => person.kind === "staff")));
+      setMembers(sortPeople(kioskPeople.filter((person) => person.kind === "member")));
+      setPeopleLoading(false);
+      return;
+    }
     if (!profile?.id) {
       setStaffEmployees([]);
       setMembers([]);
@@ -487,25 +508,41 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   }
 
   async function fetchStatus(person: Person | null): Promise<void> {
-    if (!person?.id) { setStatus(null); return; }
+    if (!person?.id) {
+      setStatus(null);
+      setCurrentShift(null);
+      setScheduleConfigured(null);
+      return;
+    }
 
     const scheduleColumn = person.kind === "member" ? "member_id" : "user_id";
-    const scheduleResult = await supabase
-      .from("employee_schedules")
-      .select("id, user_id, member_id, week_start, weekday, shift_type, start_time, end_time")
-      .eq(scheduleColumn, person.id);
+    const scheduleResult = standalone && kioskIsConfigured()
+      ? await kioskGetSchedule(person.kind, person.id)
+      : await supabase.from("employee_schedules").select("id, user_id, member_id, week_start, weekday, shift_type, start_time, end_time").eq(scheduleColumn, person.id);
     const rows = (scheduleResult.data || []) as EmployeeSchedule[];
     const now = new Date();
+    const currentWeekRows = rows.filter((row) => row.week_start === getWeekStart(now));
+    const hasSavedWeeklySchedule = currentWeekRows.length > 0;
+    setScheduleConfigured(hasSavedWeeklySchedule);
+    if (scheduleResult.error) {
+      setScheduleConfigured(false);
+      setCurrentShift(null);
+      setMessage({ type: "error", text: scheduleResult.error.message || "Unable to load the weekly schedule." });
+    } else if (!hasSavedWeeklySchedule && person.kind === "member") {
+      setMessage({
+        type: "error",
+        text: `Member ${person.full_name ?? ""}'s weekly schedule is not made. Please ask a manager to create and save it.`,
+      });
+    }
     const activeWindow = getActiveShiftWindow(rows, person.id, now);
     setCurrentShift(activeWindow);
 
     if (person.kind === "member") {
-      const { data, error } = await supabase
-        .from("member_entries")
-        .select("*")
-        .eq("member_id", person.id)
-        .order("punch_in", { ascending: false })
-        .limit(5);
+      const statusResult = standalone && kioskIsConfigured()
+        ? await kioskGetStatus(person.kind, person.id)
+        : await supabase.from("member_entries").select("*").eq("member_id", person.id).order("punch_in", { ascending: false }).limit(5);
+      const data = standalone && kioskIsConfigured() ? ((statusResult.data as { record?: MemberEntry } | null)?.record ? [(statusResult.data as { record: MemberEntry }).record] : []) : statusResult.data;
+      const error = statusResult.error;
 
       if (error) {
         setMessage({ type: "error", text: error.message || "Failed to load clock status" });
@@ -535,12 +572,11 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
 
     // Staff status is resolved inside the employee's scheduled shift window.
-    const { data, error } = await supabase
-      .from("punches")
-      .select("*")
-      .eq("user_id", person.id)
-      .order("timestamp", { ascending: false })
-      .limit(5);
+    const statusResult = standalone && kioskIsConfigured()
+      ? await kioskGetStatus(person.kind, person.id)
+      : await supabase.from("punches").select("*").eq("user_id", person.id).order("timestamp", { ascending: false }).limit(5);
+    const data = standalone && kioskIsConfigured() ? ((statusResult.data as { record?: StaffPunch } | null)?.record ? [(statusResult.data as { record: StaffPunch }).record] : []) : statusResult.data;
+    const error = statusResult.error;
 
     if (error) {
       setMessage({ type: "error", text: error.message || "Failed to load clock status" });
@@ -657,6 +693,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       const type: "in" | "out" = status ? "out" : "in";
       const clientEventId = createClientEventId();
       if (!currentShift) {
+        if (person.kind === "member" && !scheduleConfigured) {
+          throw new Error(`Member ${person.full_name ?? ""}'s weekly schedule is not made. Please ask a manager to create and save it.`);
+        }
         throw new Error("This employee has no active shift scheduled right now.");
       }
       const note = buildPunchNote({
@@ -675,26 +714,16 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           // Clock out
           const now   = new Date();
           const hours = differenceInMinutes(now, parseISO(activeEntry.punch_in)) / 60;
-          const { error } = await supabase
-            .from("member_entries")
-            .update({
-              punch_out: now.toISOString(),
-              hours: parseFloat(hours.toFixed(2)),
-              note,
-            })
-            .eq("id", activeEntry.id);
+          const { error } = standalone && kioskIsConfigured()
+            ? await kioskPunchMember({ member_id: person.id, punch_type: "out", entry_id: activeEntry.id, punched_at: now.toISOString(), hours: parseFloat(hours.toFixed(2)), note })
+            : await supabase.from("member_entries").update({ punch_out: now.toISOString(), hours: parseFloat(hours.toFixed(2)), note }).eq("id", activeEntry.id);
           if (error) throw error;
         } else {
           // Clock in
-          const { error } = await supabase.from("member_entries").insert({
-            member_id:     person.id,
-            punch_in:      new Date().toISOString(),
-            latitude:      (location as { latitude?: number } | null)?.latitude ?? null,
-            longitude:     (location as { longitude?: number } | null)?.longitude ?? null,
-            location_name: (location as { location_name?: string } | null)?.location_name ?? null,
-            note,
-            created_by:    profile?.id ?? null,
-          });
+          const memberPayload = { member_id: person.id, punch_type: "in", punched_at: new Date().toISOString(), latitude: (location as { latitude?: number } | null)?.latitude ?? null, longitude: (location as { longitude?: number } | null)?.longitude ?? null, location_name: (location as { location_name?: string } | null)?.location_name ?? null, note };
+          const { error } = standalone && kioskIsConfigured()
+            ? await kioskPunchMember(memberPayload)
+            : await supabase.from("member_entries").insert({ ...memberPayload, punch_in: memberPayload.punched_at, created_by: profile?.id ?? null });
           if (error) throw error;
         }
       } else {
@@ -715,12 +744,17 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           shift_date: currentShift?.anchorDate,
         };
         if (!navigator.onLine) {
+          if (standalone && kioskIsConfigured()) throw new Error("The shared clock station needs an internet connection.");
           await queueOfflinePunch({ ...punchPayload, client_event_id: clientEventId, queued_at: new Date().toISOString(), verification_method: "face_clock_offline" });
           setMessage({ type: "success", text: `${person.full_name ?? "Employee"} ${type} queued securely for synchronization.` });
           setFacePreview(null);
           return;
         }
-        const result = await insertPunchRecord(punchPayload);
+        if (standalone && kioskIsConfigured()) {
+          const { error } = await kioskPunchStaff({ user_id: punchPayload.user_id, punch_type: punchPayload.type, punched_at: punchPayload.timestamp, latitude: punchPayload.latitude, longitude: punchPayload.longitude, location_name: punchPayload.location_name, device_name: punchPayload.device_name, ip_address: punchPayload.ip_address, network_name: punchPayload.network_name, verification_method: punchPayload.verification_method, note: punchPayload.note, shift_type: punchPayload.shift_type, shift_date: punchPayload.shift_date, client_event_id: punchPayload.client_event_id });
+          if (error) throw error;
+        }
+        const result = standalone && kioskIsConfigured() ? { usedFallbackColumns: false } : await insertPunchRecord(punchPayload);
         void writeAuditLog("clock_punch", "punch", clientEventId, { user_id: person.id, type, verification_method: punchPayload.verification_method });
         setMessage({
           type: "success",
@@ -751,6 +785,13 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       setMessage({ type: "error", text: "Search for and select an employee or member first." });
       return;
     }
+    if (selectedPerson.kind === "member" && scheduleConfigured === false && !status) {
+      setMessage({
+        type: "error",
+        text: `Member ${selectedPerson.full_name ?? ""}'s weekly schedule is not made. Please ask a manager to create and save it.`,
+      });
+      return;
+    }
     if (!selectedFaceReference) {
       setMessage({
         type: "error",
@@ -771,6 +812,11 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     try {
       const video = videoRef.current;
       if (!video) throw new Error("Camera element not found.");
+      if (!faceApiReady) throw new Error("Face liveness is still loading. Please wait a moment and try again.");
+      setMessage({ type: "error", text: "Please blink once while looking at the camera." });
+      if (!(await waitForBlink(video))) {
+        throw new Error("A clear blink was not detected. Please look at the camera and blink once.");
+      }
       const firstPhoto = captureVideoFrame(video);
       await new Promise((resolve) => window.setTimeout(resolve, 850));
       const photo      = captureVideoFrame(video);
@@ -1031,7 +1077,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
               <button
                 type="button"
                 onClick={handleFacePunch}
-                disabled={loading || geoLoading || faceBusy || !selectedFaceReference}
+                disabled={loading || geoLoading || faceBusy || faceApiLoading || !selectedFaceReference}
                 className={`py-4 px-6 rounded-2xl font-display font-bold text-lg transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 ${
                   isClockedIn
                     ? "bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20"
@@ -1046,7 +1092,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                 ) : (
                   <>
                     <ScanFace className="w-5 h-5" />
-                    {cameraOpen
+                    {faceApiLoading
+                      ? "Loading face checks..."
+                      : cameraOpen
                       ? cameraReady
                         ? `${actionLabel} ${selectedPerson.full_name ?? ""}`
                         : "Preparing Camera..."
