@@ -44,16 +44,13 @@ export function getWeekStart(date = new Date()): string {
   return dateKey(monday);
 }
 
-function scheduleForDate(rows: EmployeeSchedule[], subjectId: string, date: Date): EmployeeSchedule {
+function scheduleForDate(rows: EmployeeSchedule[], subjectId: string, date: Date): EmployeeSchedule | null {
   const weekStart = getWeekStart(date);
-  return rows.find((row) => (row.user_id === subjectId || row.member_id === subjectId) && row.week_start === weekStart && row.weekday === date.getDay()) || {
-    user_id: subjectId,
-    week_start: weekStart,
-    weekday: date.getDay(),
-    shift_type: "morning",
-    start_time: "00:00",
-    end_time: "23:59",
-  };
+  return rows.find((row) =>
+    (row.user_id === subjectId || row.member_id === subjectId) &&
+    row.week_start === weekStart &&
+    row.weekday === date.getDay()
+  ) || null;
 }
 
 export function getWindowForSchedule(schedule: EmployeeSchedule, anchorDate: Date): ShiftWindow | null {
@@ -73,13 +70,14 @@ export function getActiveShiftWindow(rows: EmployeeSchedule[], userId: string, n
   const previousWindow = previousSchedule ? getWindowForSchedule(previousSchedule, previous) : null;
   if (previousWindow && now >= previousWindow.start && now <= previousWindow.end) return previousWindow;
   const todaySchedule = scheduleForDate(rows, userId, today);
-  const todayWindow = getWindowForSchedule(todaySchedule, today);
+  const todayWindow = todaySchedule ? getWindowForSchedule(todaySchedule, today) : null;
   return todayWindow && now >= todayWindow.start && now <= todayWindow.end ? todayWindow : null;
 }
 
 export function getWindowForPunch(rows: EmployeeSchedule[], userId: string, punchedAt: string): ShiftWindow | null {
   const date = new Date(punchedAt);
-  return getWindowForSchedule(scheduleForDate(rows, userId, date), date);
+  const schedule = scheduleForDate(rows, userId, date);
+  return schedule ? getWindowForSchedule(schedule, date) : null;
 }
 
 export function shiftLabel(window: ShiftWindow | null) {

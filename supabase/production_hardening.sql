@@ -166,6 +166,100 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 grant execute on function public.has_active_license() to authenticated;
 
+create or replace function public.has_current_schedule(subject_user_id uuid default null, subject_member_id uuid default null)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.employee_schedules s
+    where s.week_start = date_trunc('week', current_date)::date
+      and s.shift_type <> 'off'
+      and ((subject_user_id is not null and s.user_id = subject_user_id)
+        or (subject_member_id is not null and s.member_id = subject_member_id))
+  );
+$$;
+grant execute on function public.has_current_schedule(uuid, uuid) to authenticated;
+
+-- Public shared clock station. The URL carries a bearer token stored in the
+-- default system settings row. The token must be long and randomly generated.
+create or replace function public.kiosk_token_is_valid(kiosk_token text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.system_settings
+    where id = 'default' and settings->>'kiosk_token' = trim(kiosk_token)
+  ) and exists (
+    select 1 from public.licenses
+    where status = 'active' and (expires_at is null or expires_at > now())
+  );
+$$;
+
+create or replace function public.kiosk_get_people(kiosk_token text)
+returns table(id uuid, kind text, full_name text, role text, department text, face_reference jsonb)
+language sql stable security definer set search_path = public as $$
+  select p.id, 'staff'::text, p.full_name, p.role, p.department, p.face_reference
+  from public.profiles p
+  where public.kiosk_token_is_valid(kiosk_token)
+  union all
+  select m.id, 'member'::text, m.full_name, m.role, m.department, to_jsonb(m.face_reference)
+  from public.members m
+  where public.kiosk_token_is_valid(kiosk_token) and coalesce(m.status, 'active') = 'active';
+$$;
+
+create or replace function public.kiosk_get_schedule(kiosk_token text, subject_kind text, subject_id uuid)
+returns setof public.employee_schedules
+language sql stable security definer set search_path = public as $$
+  select s.* from public.employee_schedules s
+  where public.kiosk_token_is_valid(kiosk_token)
+    and ((subject_kind = 'member' and s.member_id = subject_id) or (subject_kind = 'staff' and s.user_id = subject_id));
+$$;
+
+create or replace function public.kiosk_get_status(kiosk_token text, subject_kind text, subject_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare result jsonb;
+begin
+  if not public.kiosk_token_is_valid(kiosk_token) then raise exception 'Invalid kiosk link.'; end if;
+  if subject_kind = 'member' then
+    select to_jsonb(e) into result from public.member_entries e where e.member_id = subject_id order by e.punch_in desc limit 1;
+  else
+    select to_jsonb(p) into result from public.punches p where p.user_id = subject_id order by p.timestamp desc limit 1;
+  end if;
+  return jsonb_build_object('record', result);
+end; $$;
+
+create or replace function public.kiosk_punch_member(kiosk_token text, member_id uuid, punch_type text, entry_id uuid default null, punched_at timestamptz default now(), hours_input numeric default null, latitude numeric default null, longitude numeric default null, location_name text default null, note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare result jsonb;
+begin
+  if not public.kiosk_token_is_valid(kiosk_token) then raise exception 'Invalid kiosk link.'; end if;
+  if punch_type = 'in' then
+    if not public.has_current_schedule(null, member_id) then raise exception 'This member has no saved weekly schedule.'; end if;
+    insert into public.member_entries(member_id, punch_in, latitude, longitude, location_name, note)
+    values (member_id, punched_at, latitude, longitude, location_name, note) returning to_jsonb(member_entries.*) into result;
+  elsif punch_type = 'out' then
+    update public.member_entries set punch_out = punched_at, hours = hours_input, note = kiosk_punch_member.note
+    where id = entry_id and member_entries.member_id = kiosk_punch_member.member_id and punch_out is null returning to_jsonb(member_entries.*) into result;
+    if result is null then raise exception 'No active member clock-in was found.'; end if;
+  else raise exception 'Invalid member punch type.'; end if;
+  return result;
+end; $$;
+
+create or replace function public.kiosk_punch_staff(kiosk_token text, user_id uuid, punch_type text, punched_at timestamptz default now(), latitude numeric default null, longitude numeric default null, location_name text default null, device_name text default null, ip_address text default null, network_name text default null, verification_method text default 'face_clock', note text default null, shift_type text default null, shift_date date default null, client_event_id text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare result jsonb;
+begin
+  if not public.kiosk_token_is_valid(kiosk_token) then raise exception 'Invalid kiosk link.'; end if;
+  if punch_type = 'in' and not public.has_current_schedule(user_id, null) then raise exception 'This employee has no saved weekly schedule.'; end if;
+  insert into public.punches(user_id, type, timestamp, latitude, longitude, location_name, device_name, ip_address, network_name, verification_method, note, shift_type, shift_date, client_event_id)
+  values (user_id, punch_type, punched_at, latitude, longitude, location_name, device_name, ip_address, network_name, verification_method, note, shift_type, shift_date, client_event_id)
+  returning to_jsonb(punches.*) into result;
+  return result;
+end; $$;
+
+grant execute on function public.kiosk_get_people(text) to anon, authenticated;
+grant execute on function public.kiosk_get_schedule(text, text, uuid) to anon, authenticated;
+grant execute on function public.kiosk_get_status(text, text, uuid) to anon, authenticated;
+grant execute on function public.kiosk_punch_member(text, uuid, text, uuid, timestamptz, numeric, numeric, numeric, text, text) to anon, authenticated;
+grant execute on function public.kiosk_punch_staff(text, uuid, text, timestamptz, numeric, numeric, text, text, text, text, text, text, text, date, text) to anon, authenticated;
+
 alter table public.registered_devices enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.licenses enable row level security;
@@ -179,8 +273,8 @@ drop policy if exists "Managers update punches" on public.punches;
 drop policy if exists "Users manage own licensed punches" on public.punches;
 drop policy if exists "Managers create licensed punches" on public.punches;
 drop policy if exists "Managers update licensed punches" on public.punches;
-create policy "Users manage own licensed punches" on public.punches for all to authenticated using (auth.uid() = user_id and public.has_active_license()) with check (auth.uid() = user_id and public.has_active_license());
-create policy "Managers create licensed punches" on public.punches for insert to authenticated with check (public.is_admin_or_manager() and public.has_active_license());
+create policy "Users manage own licensed punches" on public.punches for all to authenticated using (auth.uid() = user_id and public.has_active_license()) with check (auth.uid() = user_id and public.has_active_license() and (type = 'out' or public.has_current_schedule(user_id, null)));
+create policy "Managers create licensed punches" on public.punches for insert to authenticated with check (public.is_admin_or_manager() and public.has_active_license() and (type = 'out' or public.has_current_schedule(user_id, null)));
 create policy "Managers update licensed punches" on public.punches for update to authenticated using (public.is_admin_or_manager() and public.has_active_license()) with check (public.is_admin_or_manager() and public.has_active_license());
 
 drop policy if exists "Users register devices" on public.registered_devices;
@@ -224,6 +318,7 @@ drop policy if exists "Authenticated users can update members" on public.members
 drop policy if exists "Managers read members" on public.members;
 drop policy if exists "Managers manage members" on public.members;
 drop policy if exists "Managers manage member entries" on public.member_entries;
+drop policy if exists "Managers manage scheduled member entries" on public.member_entries;
 create policy "Managers read members" on public.members for select to authenticated using (public.is_admin_or_manager());
 create policy "Managers manage members" on public.members for all to authenticated using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
-create policy "Managers manage member entries" on public.member_entries for all to authenticated using (public.is_admin_or_manager()) with check (public.is_admin_or_manager());
+create policy "Managers manage scheduled member entries" on public.member_entries for all to authenticated using (public.is_admin_or_manager()) with check (public.is_admin_or_manager() and (punch_out is not null or public.has_current_schedule(null, member_id)));
