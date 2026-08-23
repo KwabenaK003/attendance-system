@@ -849,9 +849,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       const video = videoRef.current;
       if (!video) throw new Error("Camera element not found.");
       if (!faceApiReady) throw new Error("Face liveness is still loading. Please wait a moment and try again.");
-      setMessage({ type: "error", text: "Please blink once while looking at the camera." });
+      setMessage({ type: "error", text: "Keep your face centered, eyes open first, then blink slowly once." });
       if (!(await waitForBlink(video))) {
-        throw new Error("A clear blink was not detected. Please look at the camera and blink once.");
+        throw new Error("A clear blink was not detected. Keep your face centered, open your eyes, and blink slowly once.");
       }
       const firstPhoto = captureVideoFrame(video);
       await new Promise((resolve) => window.setTimeout(resolve, 850));

@@ -35,6 +35,7 @@ type NotificationRowProps = {
   title: string;
   body: string;
   tone?: NotificationTone;
+  onDismiss?: () => void;
 };
 
 type NotificationItem = NotificationRowProps & {
@@ -64,7 +65,7 @@ type NotificationState = {
   latestAction?: { title: string; body: string; timestamp: string } | null;
 };
 
-function NotificationRow({ icon: Icon, title, body, tone = "default" }: NotificationRowProps) {
+function NotificationRow({ icon: Icon, title, body, tone = "default", onDismiss }: NotificationRowProps) {
   const toneClasses = {
     default: "border-border bg-card-bg text-ink-muted",
     success: "border-accent/20 bg-accent/10 text-accent",
@@ -73,15 +74,32 @@ function NotificationRow({ icon: Icon, title, body, tone = "default" }: Notifica
   } satisfies Record<NotificationTone, string>;
 
   return (
-    <div className={`rounded-xl border px-3 py-3 shadow-sm ${toneClasses[tone] || toneClasses.default}`}>
+    <div
+      className={`rounded-xl border px-3 py-3 shadow-sm ${toneClasses[tone] || toneClasses.default} ${onDismiss ? "cursor-pointer" : ""}`}
+      onClick={onDismiss}
+    >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-current/15 bg-black/5">
           <Icon className="h-4 w-4" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-ink">{title}</p>
           <p className="mt-1 text-xs leading-5 text-current/90">{body}</p>
         </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDismiss();
+            }}
+            className="rounded-lg p-1 text-current/60 transition-colors hover:bg-black/10 hover:text-current"
+            aria-label={`Dismiss ${title}`}
+            title="Dismiss notification"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -93,6 +111,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [notificationPanelStyle, setNotificationPanelStyle] = useState({ top: 56, right: 16, width: 352 });
   const [notificationState, setNotificationState] = useState<NotificationState>({
     loading: false,
@@ -108,6 +127,34 @@ export default function Layout({ children }: { children: ReactNode }) {
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const isAdmin = hasManagementAccess(profile?.role);
+  const dismissedStorageKey = profile?.id ? `attendance-system:dismissed-notifications:${profile.id}` : "";
+
+  useEffect(() => {
+    if (!dismissedStorageKey) {
+      setDismissedNotificationIds([]);
+      return;
+    }
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(dismissedStorageKey) || "[]");
+      setDismissedNotificationIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []);
+    } catch {
+      setDismissedNotificationIds([]);
+    }
+  }, [dismissedStorageKey]);
+
+  function dismissNotification(id: string) {
+    setDismissedNotificationIds((current) => {
+      const next = current.includes(id) ? current : [...current, id];
+      if (dismissedStorageKey) {
+        try {
+          window.localStorage.setItem(dismissedStorageKey, JSON.stringify(next));
+        } catch {
+          // Ignore browser storage issues; the dismissal still applies in memory.
+        }
+      }
+      return next;
+    });
+  }
 
   async function handleSignOut() {
     await signOut();
@@ -374,7 +421,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (notificationState.latestPunch?.timestamp) {
     const isClockedIn = notificationState.latestPunch.type === "in";
     notifications.push({
-      id: "punch-status",
+      id: `punch-status-${notificationState.latestPunch.timestamp}`,
       icon: isClockedIn ? Clock3 : CheckCircle2,
       title: isClockedIn ? "You are currently clocked in" : "Last punch recorded",
       body: `${isClockedIn ? "Clocked in" : "Clocked out"} ${formatDistanceToNow(new Date(notificationState.latestPunch.timestamp), { addSuffix: true })}.`,
@@ -384,7 +431,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (isAdmin && notificationState.activeMemberSessions > 0) {
     notifications.push({
-      id: "active-member-sessions",
+      id: `active-member-sessions-${notificationState.activeMemberSessions}`,
       icon: Clock3,
       title: "Members currently clocked in",
       body: `${notificationState.activeMemberSessions} member${notificationState.activeMemberSessions === 1 ? "" : "s"} currently have an active time session.`,
@@ -395,7 +442,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (isAdmin && notificationState.latestMemberActivity?.timestamp) {
     const memberAction = notificationState.latestMemberActivity.type === "in" ? "clocked in" : "clocked out";
     notifications.push({
-      id: "member-clock-activity",
+      id: `member-clock-activity-${notificationState.latestMemberActivity.timestamp}`,
       icon: notificationState.latestMemberActivity.type === "in" ? Clock3 : CheckCircle2,
       title: `${notificationState.latestMemberActivity.actorLabel || "A member"} ${memberAction}`,
       body: `${notificationState.latestMemberActivity.personType} activity was recorded ${formatDistanceToNow(new Date(notificationState.latestMemberActivity.timestamp), { addSuffix: true })}.`,
@@ -406,7 +453,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   if (notificationState.latestLeaveRequest?.created_at) {
     const { status, start_date: startDate, end_date: endDate } = notificationState.latestLeaveRequest;
     notifications.push({
-      id: "leave-request",
+      id: `leave-request-${notificationState.latestLeaveRequest.created_at}`,
       icon: ClipboardList,
       title: `Latest leave request: ${status}`,
       body: `Request for ${startDate} to ${endDate} was updated ${formatDistanceToNow(new Date(notificationState.latestLeaveRequest.created_at), { addSuffix: true })}.`,
@@ -416,7 +463,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   if (isAdmin && notificationState.pendingLeaveCount > 0) {
     notifications.push({
-      id: "pending-leave",
+      id: `pending-leave-${notificationState.pendingLeaveCount}`,
       icon: ClipboardList,
       title: "Pending leave approvals",
       body: `${notificationState.pendingLeaveCount} leave request${notificationState.pendingLeaveCount === 1 ? "" : "s"} need review.`,
@@ -424,7 +471,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     });
   }
 
-  const unreadCount = notifications.length;
+  const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.includes(notification.id));
+  const unreadCount = visibleNotifications.length;
   const visibleNavItems = navItems;
 
   const handleDesktopSidebarBlur = (event: FocusEvent<HTMLElement>) => {
@@ -591,19 +639,20 @@ export default function Layout({ children }: { children: ReactNode }) {
               <div className="rounded-xl border border-danger/20 bg-danger/10 px-4 py-5 text-sm text-danger">
                 {notificationState.error}
               </div>
-            ) : notifications.length === 0 ? (
+            ) : visibleNotifications.length === 0 ? (
               <div className="rounded-xl border border-border bg-page-bg px-4 py-5 text-sm text-ink-muted">
                 No new notifications right now.
               </div>
             ) : (
               <div className="space-y-3">
-                {notifications.map((notification) => (
+                {visibleNotifications.map((notification) => (
                   <NotificationRow
                     key={notification.id}
                     icon={notification.icon}
                     title={notification.title}
                     body={notification.body}
                     tone={notification.tone}
+                    onDismiss={() => dismissNotification(notification.id)}
                   />
                 ))}
               </div>

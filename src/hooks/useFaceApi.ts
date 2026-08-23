@@ -62,27 +62,45 @@ export function useFaceApi() {
     return (distance(eye[1], eye[5]) + distance(eye[2], eye[4])) / (2 * distance(eye[0], eye[3]));
   }
 
-  async function waitForBlink(mediaEl: HTMLVideoElement, timeoutMs = 7000) {
+  async function waitForBlink(mediaEl: HTMLVideoElement, timeoutMs = 9000) {
     if (!modelsLoaded) throw new Error("Face liveness models are still loading. Please wait a moment and try again.");
     const startedAt = Date.now();
     let sawOpenEyes = false;
     let sawClosedEyes = false;
+    const openEyeSamples: number[] = [];
 
     while (Date.now() - startedAt < timeoutMs) {
       const detection = await faceapi
-        .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
+        // Blink detection benefits from a larger input and a slightly lower
+        // score threshold because a partially closed eye can make the face
+        // detector confidence dip briefly.
+        .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }))
         .withFaceLandmarks();
       const landmarks = (detection as unknown as { landmarks?: { getLeftEye(): LandmarkPoint[]; getRightEye(): LandmarkPoint[] } } | undefined)?.landmarks;
       if (landmarks) {
         const ratio = (eyeAspectRatio(landmarks.getLeftEye()) + eyeAspectRatio(landmarks.getRightEye())) / 2;
-        if (ratio > 0.2) {
-          if (sawClosedEyes) return true;
-          sawOpenEyes = true;
-        } else if (sawOpenEyes && ratio < 0.17) {
-          sawClosedEyes = true;
+        if (Number.isFinite(ratio)) {
+          // Establish each camera/person's open-eye baseline instead of
+          // relying on one fixed EAR value for every face and camera angle.
+          if (!sawOpenEyes && ratio > 0.17 && openEyeSamples.length < 8) {
+            openEyeSamples.push(ratio);
+          }
+          const openBaseline = openEyeSamples.length
+            ? openEyeSamples.reduce((sum, value) => sum + value, 0) / openEyeSamples.length
+            : 0.24;
+          const openThreshold = Math.max(0.16, openBaseline * 0.78);
+          const closedThreshold = Math.min(0.22, Math.max(0.1, openBaseline * 0.62));
+
+          if (!sawOpenEyes && ratio >= openThreshold) {
+            sawOpenEyes = true;
+          } else if (sawOpenEyes && !sawClosedEyes && ratio <= closedThreshold) {
+            sawClosedEyes = true;
+          } else if (sawClosedEyes && ratio >= openThreshold) {
+            return true;
+          }
         }
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      await new Promise((resolve) => window.setTimeout(resolve, 90));
     }
     return false;
   }
