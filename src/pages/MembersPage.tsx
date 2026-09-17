@@ -3,6 +3,8 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import FaceCaptureField from "../components/FaceCaptureField";
+import InitialsAvatar from "../components/InitialsAvatar";
+import Skeleton from "../components/Skeleton";
 import type { FaceEnrollment } from "../types";
 import { DEPARTMENT_OPTIONS, STAFF_ROLE_OPTIONS, getRoleLabel } from "../lib/workforce";
 import {
@@ -19,7 +21,6 @@ type MemberFormState = {
   company_name: string;
   email: string;
   department: string;
-  hourly_rate: string;
   phone: string;
   address: string;
   date_of_birth: string;
@@ -46,7 +47,7 @@ function isMissingMembersFaceReferenceColumn(error: unknown) {
 
 const EMPTY_FORM: MemberFormState = {
   full_name: "", role: "employee", company_name: "", email: "",
-  department: "", hourly_rate: "", phone: "", address: "",
+  department: "", phone: "", address: "",
   date_of_birth: "", gender: "", employment_type: "full_time",
   start_date: "", employee_id: "", emergency_contact_name: "",
   emergency_contact_phone: "", notes: "",
@@ -225,14 +226,6 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
           <label className="label">Start Date</label>
           <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
         </div>
-        <div>
-          <label className="label">Hourly Rate ($)</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">$</span>
-            <input type="number" className="input pl-8" placeholder="0.00" value={form.hourly_rate} onChange={set("hourly_rate")} />
-          </div>
-        </div>
-
         {/* Emergency Contact */}
         <SectionHeader title="Emergency Contact" />
         <div>
@@ -485,7 +478,6 @@ export default function MembersPage() {
       company_name: form.company_name || null,
       email: form.email,
       department: form.department || null,
-      hourly_rate: parseFloat(form.hourly_rate) || 0,
       phone: form.phone || null,
       address: form.address || null,
       date_of_birth: form.date_of_birth || null,
@@ -676,7 +668,15 @@ export default function MembersPage() {
 
       {/* List */}
       {loading ? (
-        <div className="card p-8 text-center text-ink-muted">Loading…</div>
+        <div className="card divide-y divide-border overflow-hidden">
+          {[0, 1, 2, 3].map((row) => (
+            <div key={row} className="flex items-center gap-3 px-5 py-4">
+              <Skeleton className="h-11 w-11 rounded-xl" />
+              <div className="flex-1 space-y-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-3 w-64 max-w-full" /></div>
+              <Skeleton className="h-9 w-9" />
+            </div>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <div className="card p-12 text-center">
           <Users className="w-8 h-8 text-slate-700 mx-auto mb-2" />
@@ -688,8 +688,8 @@ export default function MembersPage() {
             {filtered.map(m => (
               <div key={m.id} className="px-4 py-4 sm:px-5 hover:bg-page-bg transition-colors overflow-visible">
                 <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5 border border-accent/15 flex items-center justify-center text-accent font-bold font-display flex-shrink-0 relative">
-                    {initials(m.full_name)}
+                  <div className="relative">
+                    <InitialsAvatar name={m.full_name} />
                     {(m.face_reference || m.face_enrolled) && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
                         <Camera className="w-2.5 h-2.5 text-slate-950" />

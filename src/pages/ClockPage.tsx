@@ -24,7 +24,7 @@ import { resolveClockStatus, markExpiredSession } from "../lib/dailyClockReset";
 import { createClientEventId, installOfflineSyncListener, queueOfflinePunch, syncOfflinePunches } from "../lib/offlineClock";
 import { registerDevice } from "../lib/device";
 import { writeAuditLog } from "../lib/audit";
-import { getActiveShiftWindow, getWeekStart, getWindowForPunch, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
+import { getActiveShiftWindow, getWeekStart, getWindowForPunch, getWindowForSchedule, type EmployeeSchedule, type ShiftWindow, shiftLabel } from "../lib/shiftSchedule";
 import { kioskGetPeople, kioskGetSchedule, kioskGetStatus, kioskIsConfigured, kioskPunchMember, kioskPunchStaff, kioskUrl } from "../lib/kiosk";
 import { defaultSystemSettings, loadSystemSettings, type SystemSettings } from "../lib/systemSettings";
 
@@ -314,6 +314,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const [stationLinkCopied, setStationLinkCopied] = useState<boolean>(false);
   const [deviceBlocked, setDeviceBlocked] = useState<string>("");
   const [currentShift, setCurrentShift] = useState<ShiftWindow | null>(null);
+  const [todayShift, setTodayShift] = useState<ShiftWindow | null>(null);
+  const [todayScheduleRecorded, setTodayScheduleRecorded] = useState<boolean | null>(null);
   const [scheduleConfigured, setScheduleConfigured] = useState<boolean | null>(null);
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(defaultSystemSettings);
 
@@ -529,6 +531,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     if (!person?.id) {
       setStatus(null);
       setCurrentShift(null);
+      setTodayShift(null);
+      setTodayScheduleRecorded(null);
       setScheduleConfigured(null);
       return;
     }
@@ -542,6 +546,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     const currentWeekRows = rows.filter((row) => row.week_start === getWeekStart(now));
     const hasSavedWeeklySchedule = currentWeekRows.length > 0;
     setScheduleConfigured(hasSavedWeeklySchedule);
+    const todaySchedule = currentWeekRows.find((row) => row.weekday === now.getDay()) || null;
+    setTodayScheduleRecorded(Boolean(todaySchedule));
+    setTodayShift(todaySchedule ? getWindowForSchedule(todaySchedule, now) : null);
     if (scheduleResult.error) {
       setScheduleConfigured(false);
       setCurrentShift(null);
@@ -894,7 +901,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   return (
     <div
       className={`mx-auto space-y-6 ${
-        standalone ? "max-w-5xl px-4 py-6 sm:px-6" : "max-w-4xl"
+        standalone ? "page-ambient max-w-5xl px-4 py-6 sm:px-6" : "page-ambient max-w-4xl"
       }`}
     >
       {deviceBlocked && standalone && (
@@ -922,8 +929,22 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         </div>
       )}
 
-      <div className="card p-8 text-center animate-fade-up">
+      <div className="card clock-stage p-8 text-center animate-fade-up">
         <LiveClock />
+
+        <div className="mx-auto mt-5 flex w-fit items-center gap-2 rounded-full border border-info/15 bg-info/5 px-4 py-2 text-sm">
+          <Clock className="h-4 w-4 text-info" />
+          <span className="text-ink-muted">Today&apos;s shift:</span>
+          <span className="font-semibold text-ink">
+            {scheduleConfigured === false
+              ? "Not recorded in the weekly schedule. Record and save it before you come to here"
+              : todayShift
+                ? `${format(todayShift.start, "h:mm a")} – ${format(todayShift.end, "h:mm a")}`
+                : todayScheduleRecorded
+                  ? "Off today"
+                  : "No shift recorded for today"}
+          </span>
+        </div>
 
         {/* Status ring */}
         <div className="flex justify-center mt-8 mb-6">

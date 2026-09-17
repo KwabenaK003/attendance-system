@@ -47,6 +47,26 @@ npm run build
 npm run preview
 ```
 
+## Email delivery with Resend
+
+The **Email/SMTP** Settings tab sends test emails through Resend. The Resend API
+key is stored as a Supabase Edge Function secret and is never exposed to the
+browser or saved in `system_settings`.
+
+1. Create a Resend account, verify the domain you will send from, and create an API key.
+2. Copy `supabase/functions/.env.example` to `supabase/functions/.env` and add the real key.
+3. From this project directory, set the secret and deploy the function:
+
+```bash
+npx supabase secrets set --env-file supabase/functions/.env
+npx supabase functions deploy send-test-email
+```
+
+4. Sign in as a manager or administrator. In **Settings → Email/SMTP**, enter a
+verified **From Email Address**, save, and use **Send Test Email**.
+
+Only manager and administrator roles can invoke the email function.
+
 ## Tablet kiosk deployment
 
 The application is installable as a PWA on Android tablets. Open the deployed URL in Chrome, sign in with a management account, open `/clock/station?mode=kiosk`, and use **Install app** from the browser menu. The kiosk route is restricted to management roles and registers the tablet as a device.

@@ -33,10 +33,7 @@ export type SystemSettings = {
     dateFormat: DateFormatOption;
   };
   email: {
-    smtpHost: string;
-    smtpPort: string;
-    smtpUsername: string;
-    smtpPassword: string;
+    fromEmail: string;
     fromName: string;
     replyToAddress: string;
     footerText: string;
@@ -82,7 +79,7 @@ type SettingsLoadResult = {
 
 export const defaultSystemSettings: SystemSettings = {
   general: {
-    organisationName: "Attendance Management",
+    organisationName: "AttendanceIQ",
     officeAddress: "",
     timezone: "UTC",
     workDays: ["mon", "tue", "wed", "thu", "fri"],
@@ -92,11 +89,8 @@ export const defaultSystemSettings: SystemSettings = {
     dateFormat: "MM/DD/YYYY",
   },
   email: {
-    smtpHost: "",
-    smtpPort: "587",
-    smtpUsername: "",
-    smtpPassword: "",
-    fromName: "Attendance Management",
+    fromEmail: "",
+    fromName: "AttendanceIQ",
     replyToAddress: "",
     footerText: "",
     welcomeEmailEnabled: true,
@@ -203,10 +197,13 @@ export function normalizeSystemSettings(input: PartialDeep<SystemSettings> = {})
       faceRecognitionThreshold: clampNumber(general.faceRecognitionThreshold, 0, 1, defaultSystemSettings.general.faceRecognitionThreshold),
       dateFormat: DATE_FORMAT_OPTIONS.includes(general.dateFormat as DateFormatOption) ? general.dateFormat as DateFormatOption : defaultSystemSettings.general.dateFormat,
     },
+    // Deliberately enumerate public email settings. Older saved settings may
+    // contain SMTP credentials; never load or write them back to storage.
     email: {
-      ...defaultSystemSettings.email,
-      ...email,
-      smtpPort: String(email.smtpPort ?? defaultSystemSettings.email.smtpPort),
+      fromEmail: typeof email.fromEmail === "string" ? email.fromEmail : defaultSystemSettings.email.fromEmail,
+      fromName: typeof email.fromName === "string" ? email.fromName : defaultSystemSettings.email.fromName,
+      replyToAddress: typeof email.replyToAddress === "string" ? email.replyToAddress : defaultSystemSettings.email.replyToAddress,
+      footerText: typeof email.footerText === "string" ? email.footerText : defaultSystemSettings.email.footerText,
       welcomeEmailEnabled: email.welcomeEmailEnabled ?? defaultSystemSettings.email.welcomeEmailEnabled,
     },
     attendance: {

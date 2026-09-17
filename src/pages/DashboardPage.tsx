@@ -22,6 +22,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -35,8 +36,9 @@ import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { loadSystemSettings } from "../lib/systemSettings";
 import { buildMemberActivity, buildPunchActivity, buildPunchSessions, sortTimeActivity } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
+import { CHART_COLORS, CHART_THEME, formatChartNumber } from "../lib/chartColors";
 
-const PIE_COLORS = ["#3b82f6", "#f59e0b", "#f43f5e"];
+const PIE_COLORS = [CHART_COLORS.genderMale, CHART_COLORS.genderFemale, CHART_COLORS.neutral];
 const LEAVE_MEMBER_MARKER = "__LEAVE_MEMBER__:";
 
 type ChartTooltipPayload = {
@@ -52,7 +54,7 @@ type ChartTooltipProps = {
   label?: string | number;
 };
 
-type StatColor = "accent" | "red" | "yellow" | "blue";
+type StatColor = "success" | "warning" | "info" | "neutral";
 
 type StatCardProps = {
   icon: ComponentType<{ className?: string }>;
@@ -67,12 +69,12 @@ type AttendanceSettings = {
   lateThresholdMinutes?: number | string;
 };
 
-function StatCard({ icon: Icon, label, value, sub, color = "accent" }: StatCardProps) {
+function StatCard({ icon: Icon, label, value, sub, color = "info" }: StatCardProps) {
   const colors = {
-    accent: "text-accent bg-accent/10 border-accent/20",
-    red: "text-danger bg-danger/10 border-danger/20",
-    yellow: "text-warn bg-warn/10 border-warn/20",
-    blue: "text-info bg-info/10 border-info/20",
+    success: "text-success bg-success/10 border-success/20",
+    warning: "text-warn bg-warn/10 border-warn/20",
+    info: "text-info bg-info/10 border-info/20",
+    neutral: "text-slate-600 bg-slate-500/10 border-slate-500/20",
   } satisfies Record<StatColor, string>;
 
   return (
@@ -80,7 +82,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "accent" }: StatCardP
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{label}</p>
-          <p className="mt-2 font-display text-3xl font-semibold text-ink">{value}</p>
+          <p className="mt-2 font-display text-3xl font-semibold text-ink">{typeof value === "number" ? formatChartNumber.format(value) : value}</p>
           {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
         </div>
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${colors[color]}`}>
@@ -99,7 +101,7 @@ function HoursTooltip({ active, payload = [], label }: ChartTooltipProps = {}) {
   return (
     <div className="card px-3 py-2 text-sm">
       <p className="text-ink-muted">{label}</p>
-      <p className="font-semibold text-accent">{payload[0].value}h</p>
+      <p className="font-semibold text-accent">{formatChartNumber.format(Number(payload[0].value || 0))}h</p>
     </div>
   );
 }
@@ -114,7 +116,7 @@ function StatusTooltip({ active, payload = [] }: ChartTooltipProps = {}) {
     <div className="card px-3 py-2 text-sm">
       <p className="text-ink-muted">{entry.name}</p>
       <p className="font-semibold" style={{ color: entry.payload?.fill || entry.color }}>
-        {entry.value}
+        {formatChartNumber.format(Number(entry.value || 0))}
       </p>
     </div>
   );
@@ -217,9 +219,9 @@ function buildGenderDistribution(members: LooseRow[] = []) {
   }
 
   return [
-    { name: "Male", value: counts.Male, fill: PIE_COLORS[0] },
-    { name: "Female", value: counts.Female, fill: PIE_COLORS[2] },
-    { name: "Unspecified", value: counts.Unspecified, fill: PIE_COLORS[1] },
+    { name: "Male", value: counts.Male, fill: CHART_COLORS.genderMale },
+    { name: "Female", value: counts.Female, fill: CHART_COLORS.genderFemale },
+    { name: "Unspecified", value: counts.Unspecified, fill: CHART_COLORS.neutral },
   ].filter((slice) => slice.value > 0);
 }
 
@@ -425,8 +427,8 @@ export default function DashboardPage() {
       const inactiveMemberIds = new Set((leaveRequestsResult.data || []).map((request) => getLeaveMemberId(request.reason)).filter(Boolean));
       const inactiveCount = members.filter((member) => inactiveMemberIds.has(member.id)).length;
       setMemberStatusData([
-        { name: "Active", value: Math.max(members.length - inactiveCount, 0), fill: "#3b82f6" },
-        { name: "Inactive", value: inactiveCount, fill: "#ff4d6d" },
+        { name: "Active", value: Math.max(members.length - inactiveCount, 0), fill: CHART_COLORS.success },
+        { name: "Inactive", value: inactiveCount, fill: CHART_COLORS.danger },
       ]);
       setStatusBreakdown(buildGenderDistribution(members));
       setRecentClockRows(
@@ -504,10 +506,10 @@ export default function DashboardPage() {
 
       {isAdmin && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="blue" />
-          <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="accent" />
-          <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="yellow" />
-          <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="red" />
+          <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="info" />
+          <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="success" />
+          <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="warning" />
+          <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="neutral" />
         </div>
       )}
 
@@ -527,21 +529,23 @@ export default function DashboardPage() {
               <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="hoursGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.28} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    <stop offset="5%" stopColor={CHART_COLORS.info} stopOpacity={0.28} />
+                    <stop offset="95%" stopColor={CHART_COLORS.info} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(138,154,178,0.08)" />
-                <XAxis dataKey="day" tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
+                <CartesianGrid {...CHART_THEME.grid} />
+                <XAxis dataKey="day" tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} />
+                <YAxis tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} label={{ value: "Hours", angle: -90, position: "insideLeft", ...CHART_THEME.yAxisLabel }} />
                 <Tooltip content={<HoursTooltip />} />
+                <Legend {...CHART_THEME.legend} />
                 <Area
                   type="monotone"
                   dataKey="hours"
-                  stroke="#3b82f6"
+                  name="Hours"
+                  stroke={CHART_COLORS.info}
                   strokeWidth={2}
                   fill="url(#hoursGrad)"
-                  dot={{ fill: "#3b82f6", strokeWidth: 0, r: 3 }}
+                  dot={{ fill: CHART_COLORS.info, strokeWidth: 0, r: 3 }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -557,10 +561,11 @@ export default function DashboardPage() {
             <div className="h-[220px] flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={memberStatusData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(138,154,178,0.08)" />
-                  <XAxis dataKey="name" tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fill: "#8a9ab2", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <CartesianGrid {...CHART_THEME.grid} />
+                  <XAxis dataKey="name" tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} label={{ value: "Members", angle: -90, position: "insideLeft", ...CHART_THEME.yAxisLabel }} />
                   <Tooltip content={<StatusTooltip />} />
+                  <Legend {...CHART_THEME.legend} />
                   <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                     {memberStatusData.map((entry) => (
                       <Cell key={entry.name} fill={entry.fill} />
@@ -585,7 +590,7 @@ export default function DashboardPage() {
               <div className="flex h-[220px] items-center justify-center text-ink-muted">No gender data yet.</div>
             ) : (
               <>
-                <div className="h-[220px] flex-1">
+                <div className="relative h-[220px] flex-1">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -601,8 +606,13 @@ export default function DashboardPage() {
                         ))}
                       </Pie>
                       <Tooltip content={<StatusTooltip />} />
+                      <Legend {...CHART_THEME.legend} />
                     </PieChart>
                   </ResponsiveContainer>
+                  <div className="pointer-events-none absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2 text-center">
+                    <p className="font-display text-lg font-bold text-ink">{statusBreakdown.reduce((total, slice) => total + Number(slice.value || 0), 0)}</p>
+                    <p className="text-[10px] uppercase tracking-wide text-ink-muted">Total</p>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-2 grid-cols-3">

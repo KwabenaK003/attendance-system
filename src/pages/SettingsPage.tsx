@@ -319,9 +319,9 @@ export default function SettingsPage() {
     setSmtpTesting(true);
     setError("");
     try {
-      const { smtpHost, smtpPort, smtpUsername, smtpPassword } = systemSettings.email;
-      if (!smtpHost || !smtpPort || !smtpUsername || !smtpPassword) {
-        throw new Error("Enter the SMTP host, port, username, and password before running a test.");
+      const { fromEmail } = systemSettings.email;
+      if (!fromEmail.trim()) {
+        throw new Error("Enter the verified From Email Address before sending a test.");
       }
       if (!testRecipientAddress.trim()) {
         throw new Error("Enter an email address to send the test to.");
@@ -334,9 +334,9 @@ export default function SettingsPage() {
 
       const result = await sendTestEmail(systemSettings.email, testRecipientAddress);
       setToast({ type: "success", message: result.message });
-    } catch (smtpError) {
-      setError((smtpError as Error).message || "Unable to test SMTP settings.");
-      setToast({ type: "error", message: (smtpError as Error).message || "Unable to test SMTP settings." });
+    } catch (emailError) {
+      setError((emailError as Error).message || "Unable to send the test email.");
+      setToast({ type: "error", message: (emailError as Error).message || "Unable to send the test email." });
     } finally {
       setSmtpTesting(false);
     }
@@ -348,7 +348,7 @@ export default function SettingsPage() {
         <SectionCard title="Organisation Basics" description="The core organisation settings that shape reports, geolocation defaults, and date/time handling across the whole system.">
           <div className="grid gap-4 lg:grid-cols-2">
             <Field label="Organisation Name" hint="Displayed in reports and email headers.">
-              <input className="input" value={systemSettings.general.organisationName} onChange={(e) => setSystemField("general", "organisationName", e.target.value)} placeholder="Attendance Management" />
+              <input className="input" value={systemSettings.general.organisationName} onChange={(e) => setSystemField("general", "organisationName", e.target.value)} placeholder="AttendanceIQ" />
             </Field>
             <Field label="Timezone" hint="Critical for accurate check-in and check-out times across all records.">
               <select className="input" value={systemSettings.general.timezone} onChange={(e) => setSystemField("general", "timezone", e.target.value)}>
@@ -428,12 +428,10 @@ export default function SettingsPage() {
   function renderEmailPanel() {
     return (
       <div className="space-y-5">
-        <SectionCard title="SMTP Server" description="Everything needed to send welcome messages, check-in confirmations, and scheduled reports.">
+        <SectionCard title="Resend Email Delivery" description="Email is sent securely through the Resend service. Its API key is kept in Supabase Edge Function secrets and is never saved in this app.">
           <div className="grid gap-4 lg:grid-cols-2">
-            <Field label="SMTP Host" hint="For example: smtp.gmail.com"><input className="input" value={systemSettings.email.smtpHost} onChange={(e) => setSystemField("email", "smtpHost", e.target.value)} placeholder="smtp.gmail.com" /></Field>
-            <Field label="SMTP Port" hint="Common values are 587 for TLS or 465 for SSL."><input className="input" value={systemSettings.email.smtpPort} onChange={(e) => setSystemField("email", "smtpPort", e.target.value)} placeholder="587" /></Field>
-            <Field label="SMTP Username" hint="Usually the sending email address."><input className="input" value={systemSettings.email.smtpUsername} onChange={(e) => setSystemField("email", "smtpUsername", e.target.value)} placeholder="sender@company.com" /></Field>
-            <Field label="SMTP Password" hint="Displayed as a masked value."><input type="password" className="input" value={systemSettings.email.smtpPassword} onChange={(e) => setSystemField("email", "smtpPassword", e.target.value)} placeholder="••••••••" /></Field>
+            <Field label="From Email Address" hint="Must be a domain/address verified in Resend."><input type="email" className="input" value={systemSettings.email.fromEmail} onChange={(e) => setSystemField("email", "fromEmail", e.target.value)} placeholder="attendance@yourcompany.com" /></Field>
+            <Field label="From Name" hint="The sender name shown to recipients."><input className="input" value={systemSettings.email.fromName} onChange={(e) => setSystemField("email", "fromName", e.target.value)} placeholder="AttendanceIQ" /></Field>
           </div>
         </SectionCard>
 
@@ -448,7 +446,7 @@ export default function SettingsPage() {
           <ToggleRow label="Welcome Email Toggle" description="Automatically send a welcome message when a new member is added." checked={systemSettings.email.welcomeEmailEnabled} onChange={(checked) => setSystemField("email", "welcomeEmailEnabled", checked)} />
           <div className="rounded-2xl border border-border bg-page-bg p-4">
             <p className="text-sm font-medium text-ink">Send Test Email</p>
-            <p className="mt-1 text-sm text-ink-muted">Saves the current SMTP configuration, then sends a real test email to the address below.</p>
+            <p className="mt-1 text-sm text-ink-muted">Saves the sender details, then sends a real test email through the securely configured Resend service.</p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <input
                 type="email"

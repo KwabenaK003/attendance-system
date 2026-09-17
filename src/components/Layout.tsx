@@ -14,18 +14,38 @@ import {
   Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList, UserPlus
 } from "lucide-react";
 
-const navItems = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/clock", icon: Clock, label: "Time Clock" },
-  { to: "/timesheets", icon: FileText, label: "Attendance Log" },
-  { to: "/leave", icon: Calendar, label: "Leave Requests" },
-  { to: "/reports", icon: BarChart2, label: "Reports" },
-  { to: "/members", icon: Users, label: "Members" },
-  { to: "/visitors", icon: UserRound, label: "Visitors" },
-  { to: "/settings", icon: Settings, label: "Settings" },
-  { to: "/users", icon: UserPlus, label: "Users" },
-  { to: "/admin-controls", icon: ClipboardList, label: "Admin Controls" },
-  { to: "/schedules", icon: Calendar, label: "Schedules" },
+const navSections = [
+  {
+    items: [{ to: "/dashboard", icon: LayoutDashboard, label: "Overview" }],
+  },
+  {
+    label: "Operations",
+    items: [
+      { to: "/schedules", icon: Calendar, label: "Schedule" },
+      { to: "/clock", icon: Clock, label: "Time Clock" },
+      { to: "/timesheets", icon: FileText, label: "Attendance Log" },
+    ],
+  },
+  {
+    label: "People",
+    items: [
+      { to: "/members", icon: Users, label: "Members" },
+      { to: "/visitors", icon: UserRound, label: "Visitors" },
+    ],
+  },
+  {
+    label: "Activity",
+    items: [{ to: "/leave", icon: Calendar, label: "Leave Request" }],
+  },
+  {
+    label: "System",
+    items: [
+      { to: "/users", icon: UserPlus, label: "Users" },
+      { to: "/reports", icon: BarChart2, label: "Reports" },
+      { to: "/settings", icon: Settings, label: "Settings" },
+      { to: "/admin-controls", icon: ClipboardList, label: "Admin Controls" },
+    ],
+  },
 ];
 
 type NotificationTone = "default" | "success" | "warning" | "info";
@@ -473,7 +493,7 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const visibleNotifications = notifications.filter((notification) => !dismissedNotificationIds.includes(notification.id));
   const unreadCount = visibleNotifications.length;
-  const visibleNavItems = navItems;
+  const visibleNavSections = navSections;
 
   const handleDesktopSidebarBlur = (event: FocusEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -486,52 +506,45 @@ export default function Layout({ children }: { children: ReactNode }) {
       {/* Logo */}
       <div className={`border-b border-white/10 py-5 ${compact ? "px-3" : "px-4"}`}>
         <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-          <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center clock-ring">
+          <div className="logo-breathe w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center clock-ring">
             <Building2 className="w-4 h-4 text-primary" />
           </div>
           <div className={compact ? "hidden" : "min-w-0"}>
-            <h1 className="font-display font-bold text-sidebar-text text-lg leading-none">Attendance Management</h1>
+            <h1 className="font-display font-bold text-sidebar-text text-lg leading-none">AttendanceIQ</h1>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className={`flex-1 py-4 space-y-1 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
-        {!compact && <p className="text-sidebar-text/40 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Main</p>}
-        {visibleNavItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            title={compact ? label : undefined}
-            className={({ isActive }) => `nav-link group ${compact ? "compact" : ""} ${isActive ? "active" : ""}`}
-            onClick={() => setSidebarOpen(false)}
-          >
-            <Icon className="w-4 h-4 flex-shrink-0" />
-            {!compact && <span>{label}</span>}
-            {!compact && <ChevronRight className="w-3 h-3 ml-auto opacity-0 transition-opacity group-hover:opacity-100" />}
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* User */}
-      <div className={`border-t border-white/10 ${compact ? "p-2" : "p-3"}`}>
-        <div className={`rounded-xl bg-white/5 ${compact ? "flex flex-col items-center gap-2 px-2 py-3" : "flex items-center gap-3 px-3 py-2"}`}>
-          <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center text-primary text-xs font-bold font-display flex-shrink-0">
-            {initials}
-          </div>
-          <div className={compact ? "hidden" : "flex-1 min-w-0"}>
-            <p className="text-sidebar-text text-sm font-medium truncate">{displayName}</p>
-            <p className="text-sidebar-text/40 text-xs">{getRoleLabel(profile?.role)}</p>
-          </div>
-          <button
-            onClick={handleSignOut}
-            className={`text-sidebar-text/40 hover:text-danger transition-colors ${compact ? "" : "ml-auto"}`}
-            title="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+      <nav className={`flex-1 py-4 overflow-y-auto ${compact ? "px-2" : "px-3"}`}>
+        <div className={compact ? "space-y-3" : "space-y-5"}>
+          {visibleNavSections.map((section, sectionIndex) => (
+            <div key={section.label || "overview"} className="space-y-1">
+              {!compact && section.label && (
+                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-sidebar-text/40">
+                  {section.label}
+                </p>
+              )}
+              {section.items.map(({ to, icon: Icon, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  title={compact ? label : undefined}
+                  className={({ isActive }) => `nav-link group ${compact ? "compact" : ""} ${isActive ? "active" : ""}`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  {!compact && <span>{label}</span>}
+                  {!compact && <ChevronRight className="w-3 h-3 ml-auto opacity-0 transition-opacity group-hover:opacity-100" />}
+                </NavLink>
+              ))}
+              {compact && sectionIndex < visibleNavSections.length - 1 && (
+                <div className="mx-2 border-t border-white/10 pt-2" aria-hidden="true" />
+              )}
+            </div>
+          ))}
         </div>
-      </div>
+      </nav>
     </div>
   );
 
@@ -574,29 +587,49 @@ export default function Layout({ children }: { children: ReactNode }) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
-          <div className="relative" ref={notificationRef}>
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={notificationRef}>
+              <button
+                ref={notificationButtonRef}
+                type="button"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                  notificationsOpen
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border bg-page-bg text-ink-muted hover:border-primary/30 hover:text-ink"
+                }`}
+                title="Notifications"
+                aria-label="Toggle notifications"
+                aria-expanded={notificationsOpen}
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <>
+                    <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-bold leading-4 text-white">
+                      {unreadCount}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-page-bg px-2 py-1">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/15 font-display text-xs font-bold text-primary">
+                {initials}
+              </div>
+              <div className="hidden min-w-0 sm:block">
+                <p className="max-w-36 truncate text-sm font-medium leading-4 text-ink">{displayName}</p>
+                <p className="text-[11px] leading-4 text-ink-muted">{getRoleLabel(profile?.role)}</p>
+              </div>
+            </div>
             <button
-              ref={notificationButtonRef}
               type="button"
-              onClick={() => setNotificationsOpen((open) => !open)}
-              className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
-                notificationsOpen
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-border bg-page-bg text-ink-muted hover:border-primary/30 hover:text-ink"
-              }`}
-              title="Notifications"
-              aria-label="Toggle notifications"
-              aria-expanded={notificationsOpen}
+              onClick={handleSignOut}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:border-danger/30 hover:bg-danger/10 hover:text-danger"
+              title="Sign out"
+              aria-label="Sign out"
             >
-              <Bell className="w-4 h-4" />
-              {unreadCount > 0 && (
-                <>
-                  <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />
-                  <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-[10px] font-bold leading-4 text-white">
-                    {unreadCount}
-                  </span>
-                </>
-              )}
+              <LogOut className="h-4 w-4" />
             </button>
           </div>
         </header>

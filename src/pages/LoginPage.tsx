@@ -46,20 +46,20 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-page-bg px-4 py-8 text-ink sm:px-6 lg:px-8">
+    <div className="page-ambient min-h-screen bg-page-bg px-4 py-8 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl place-items-center gap-8">
         <div className="w-full max-w-md animate-fade-up">
           <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
+            <div className="logo-breathe flex h-10 w-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10">
               <Building2 className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="font-display text-lg font-semibold text-ink">Attendance Management</h1>
+              <h1 className="font-display text-lg font-semibold text-ink">AttendanceIQ</h1>
               <p className="text-xs text-ink-muted">Workforce attendance operations</p>
             </div>
           </div>
 
-          <div className="card p-6 sm:p-7">
+          <div className="card clock-stage p-6 sm:p-7">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-display text-2xl font-semibold text-ink">Sign in</h2>
@@ -141,7 +141,7 @@ export default function LoginPage() {
             </form>
 
             <p className="mt-6 text-center text-xs text-ink-muted/70">
-              Attendance Management © {new Date().getFullYear()}
+              AttendanceIQ © {new Date().getFullYear()}
             </p>
           </div>
         </div>

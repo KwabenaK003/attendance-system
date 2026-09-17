@@ -2,6 +2,8 @@ import {
   Bar, BarChart, CartesianGrid, Legend,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { BarChart3 } from "lucide-react";
+import { CHART_COLORS, CHART_THEME, formatChartNumber } from "../lib/chartColors";
 
 export interface AttendanceDataPoint {
   label: string;
@@ -32,7 +34,7 @@ function AttendanceTooltip({ active, payload, label }: ChartTooltipProps) {
       <p className="text-ink-muted">{label}</p>
       {payload.map((entry) => (
         <p key={entry.dataKey as string} style={{ color: entry.color }} className="font-semibold">
-          {entry.name}: {entry.value}
+          {entry.name}: {formatChartNumber.format(Number(entry.value || 0))}
         </p>
       ))}
     </div>
@@ -46,28 +48,36 @@ interface AttendanceChartCardProps {
 }
 
 function AttendanceChartCard({ title, data, loading }: AttendanceChartCardProps) {
+  const hasAttendanceData = data.some((point) => point.attendees > 0 || point.absentees > 0);
+
   return (
     <div className="card p-5">
       <h3 className="font-display font-semibold text-ink mb-4">{title}</h3>
       {loading ? (
         <div className="h-64 flex items-center justify-center text-ink-muted">Loading…</div>
-      ) : data.length === 0 ? (
-        <div className="h-64 flex items-center justify-center text-ink-muted">No attendance data</div>
+      ) : !hasAttendanceData ? (
+        <div className="flex h-64 flex-col items-center justify-center text-center text-ink-muted">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-page-bg">
+            <BarChart3 className="h-5 w-5 text-info" />
+          </div>
+          <p className="mt-3 text-sm font-medium text-ink">No attendance data yet</p>
+          <p className="mt-1 max-w-56 text-xs leading-5">Clock-in activity will appear here once attendance is recorded.</p>
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(8,4,2,0.06)" />
-            <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+            <CartesianGrid {...CHART_THEME.grid} />
+            <XAxis dataKey="label" tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} />
+            <YAxis allowDecimals={false} tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} label={{ value: "Employees", angle: -90, position: "insideLeft", ...CHART_THEME.yAxisLabel }} />
             <Tooltip
               content={<AttendanceTooltip />}
               labelFormatter={(_label: string | number, payload?: Array<{ payload?: AttendanceDataPoint }>) =>
                 (payload?.[0]?.payload as AttendanceDataPoint)?.fullLabel || ""
               }
             />
-            <Legend formatter={(value: string | number) => <span className="text-ink-muted text-xs">{value}</span>} />
-            <Bar dataKey="attendees" name="Attendees" fill="#3b82f6" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="absentees" name="Absentees" fill="#ff4d6d" radius={[6, 6, 0, 0]} />
+            <Legend {...CHART_THEME.legend} formatter={(value: string | number) => <span className="text-ink-muted text-xs">{value}</span>} />
+            <Bar dataKey="attendees" name="Attendees" fill={CHART_COLORS.success} radius={[6, 6, 0, 0]} />
+            <Bar dataKey="absentees" name="Absentees" fill={CHART_COLORS.danger} radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
