@@ -13,7 +13,8 @@ export interface SendTestEmailResult {
 }
 
 /**
- * Sends a test email using the currently configured SMTP settings.
+ * Sends a test email using the Resend key stored in Supabase Edge Function
+ * secrets. The browser supplies only public sender details.
  * Throws an Error with a user-readable message on failure.
  */
 export async function sendTestEmail(
@@ -24,10 +25,10 @@ export async function sendTestEmail(
     throw new Error("Enter an email address to send the test to.");
   }
 
-  const { smtpHost, smtpPort, smtpUsername, smtpPassword, fromName, replyToAddress } = emailSettings;
+  const { fromEmail, fromName, replyToAddress, footerText } = emailSettings;
 
-  if (!smtpHost || !smtpPort || !smtpUsername || !smtpPassword) {
-    throw new Error("Fill in SMTP Host, Port, Username, and Password before testing.");
+  if (!fromEmail?.trim()) {
+    throw new Error("Enter a verified From Email Address before sending a test.");
   }
 
   let data: { success?: boolean; message?: string; error?: string } | null = null;
@@ -36,12 +37,10 @@ export async function sendTestEmail(
   try {
     const response = await supabase.functions.invoke("send-test-email", {
       body: {
-        smtpHost,
-        smtpPort: Number(smtpPort),
-        smtpUsername,
-        smtpPassword,
+        fromEmail,
         fromName,
         replyToAddress,
+        footerText,
         toAddress: toAddress.trim(),
       },
     });
@@ -72,7 +71,7 @@ export async function sendTestEmail(
 
     if (error instanceof FunctionsFetchError) {
       throw new Error(
-        "The test email function could not be reached from the network. Check that the Edge Function is deployed and your Supabase project is online."
+        "The email function could not be reached. Confirm that send-test-email is deployed and your Supabase project is online."
       );
     }
 
@@ -80,7 +79,7 @@ export async function sendTestEmail(
 
     if (/Failed to send a request to the Edge Function/i.test(message)) {
       throw new Error(
-        "The test email function is not reachable yet. Make sure the Supabase Edge Function `send-test-email` is deployed in your linked project, then try again."
+        "The email function is not reachable yet. Make sure the Supabase Edge Function `send-test-email` is deployed in your linked project, then try again."
       );
     }
 

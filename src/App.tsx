@@ -19,11 +19,16 @@ import LicensePage from "./pages/LicensePage";
 import AdminControlsPage from "./pages/AdminControlsPage";
 import SchedulesPage from "./pages/SchedulesPage";
 import { kioskIsConfigured } from "./lib/kiosk";
+import Skeleton from "./components/Skeleton";
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+    <div className="page-ambient flex min-h-screen items-center justify-center px-4">
+      <div className="card w-full max-w-md space-y-5 p-7">
+        <div className="flex items-center gap-3"><Skeleton className="h-10 w-10 rounded-xl" /><div className="space-y-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-48" /></div></div>
+        <Skeleton className="h-24 w-full" />
+        <div className="space-y-3"><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /><Skeleton className="h-11 w-full" /></div>
+      </div>
     </div>
   );
 }

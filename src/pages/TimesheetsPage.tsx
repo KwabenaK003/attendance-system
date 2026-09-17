@@ -658,7 +658,7 @@ export default function TimesheetsPage() {
       <div className="grid grid-cols-3 gap-4 animate-fade-up">
         {(
           [
-            { label: "Total Hours", value: formatDuration(totalMinutes), color: "text-accent" },
+            { label: "Total Hours", value: formatDuration(totalMinutes), color: overtimeMinutes > 0 ? "text-warn" : "text-ink-muted" },
             { label: "Regular",     value: formatDuration(regularMinutes), color: "text-info" },
             {
               label: "Overtime",

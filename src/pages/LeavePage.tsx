@@ -257,6 +257,10 @@ export default function LeavePage() {
     if (form.end_date < form.start_date) { setError("End date must be after start date"); return; }
     if (form.type === "other" && !form.other_type.trim()) { setError("Enter the leave type you are requesting"); return; }
     if (!profile?.id) { setError("Your account profile is still loading. Please try again."); return; }
+    if (editingRequestId && requests.find((entry) => String(entry.id) === editingRequestId)?.status !== "pending") {
+      setError("Only pending leave requests can be edited.");
+      return;
+    }
 
     setSubmitting(true);
     setError("");
@@ -271,14 +275,24 @@ export default function LeavePage() {
         reason: buildLeaveReason(form.type, form.other_type, form.reason, form.member_id, form.member_name),
       };
 
-      const { error: submitError } = editingRequestId
-        ? await supabase.from("leave_requests").update(payload).eq("id", editingRequestId)
-        : await supabase.from("leave_requests").insert({
+      if (editingRequestId) {
+        const { data, error: submitError } = await supabase
+          .from("leave_requests")
+          .update(payload)
+          .eq("id", editingRequestId)
+          .eq("status", "pending")
+          .select("id");
+
+        if (submitError) throw submitError;
+        if (!data?.length) throw new Error("This leave request was already resolved and can no longer be edited.");
+      } else {
+        const { error: submitError } = await supabase.from("leave_requests").insert({
           user_id: profile.id,
           ...payload,
         });
 
-      if (submitError) throw submitError;
+        if (submitError) throw submitError;
+      }
 
       if (creatingViaRoute) {
         setForm({ member_id: "", member_name: "", member_search: "", type: "vacation", other_type: "", start_date: "", end_date: "", reason: "" });
@@ -301,18 +315,69 @@ export default function LeavePage() {
   async function updateStatus(id: string, status: string) {
     if (!profile?.id) return;
 
+    const request = requests.find((entry) => String(entry.id) === id);
+    if (request?.status !== "pending") {
+      setListError("Only pending leave requests can be approved or rejected.");
+      return;
+    }
+
     setListError("");
-    const { error: updateError } = await supabase.from("leave_requests").update({ status, approved_by: profile.id }).eq("id", id);
+    const { data, error: updateError } = await supabase
+      .from("leave_requests")
+      .update({ status, approved_by: profile.id })
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id");
+
     if (updateError) {
       setListError(updateError.message || `Failed to ${status === "approved" ? "approve" : "reject"} leave request`);
+      return;
+    }
+
+    if (!data?.length) {
+      setListError("This leave request was already resolved. Refresh the list to see its latest status.");
+      await fetchRequests();
       return;
     }
 
     await fetchRequests();
   }
 
+  async function revertToPending(id: string) {
+    const request = requests.find((entry) => String(entry.id) === id);
+    if (!isAdmin || !request || request.status === "pending") {
+      return;
+    }
+
+    setListError("");
+    const { data, error: revertError } = await supabase
+      .from("leave_requests")
+      .update({ status: "pending", approved_by: null })
+      .eq("id", id)
+      .in("status", ["approved", "rejected"])
+      .select("id");
+
+    if (revertError) {
+      setListError(revertError.message || "Failed to revert the leave request to pending.");
+      return;
+    }
+
+    if (!data?.length) {
+      setListError("This leave request has already changed. Refresh the list to see its latest status.");
+      await fetchRequests();
+      return;
+    }
+
+    await fetchRequests();
+    setToast({ type: "success", message: "Leave request reverted to pending." });
+  }
+
   function startEditing(request: LooseRow) {
     setOpenActionMenuId(null);
+    if (request.status !== "pending") {
+      setListError("Only pending leave requests can be edited.");
+      return;
+    }
     navigate(`/leave/${request.id}/edit`);
   }
 
@@ -544,6 +609,10 @@ export default function LeavePage() {
           <div className="card p-8 text-center text-ink-muted">Loading…</div>
         ) : editingViaRoute && !selectedRequest ? (
           <div className="card p-8 text-center text-ink-muted">Leave request not found.</div>
+        ) : selectedRequest?.status !== "pending" ? (
+          <div className="card p-8 text-center text-ink-muted">
+            Resolved leave requests cannot be edited. Return to the list to view available actions.
+          </div>
         ) : (
           renderRequestForm()
         )}
@@ -617,10 +686,13 @@ export default function LeavePage() {
             const leaveProfile = req.profiles as { full_name?: string } | undefined;
             const isOwnRequest = req.user_id === profile?.id;
             const canChangeStatus = isOwnRequest || isAdmin;
-            const canEdit = isOwnRequest || isAdmin;
             const canDelete = isOwnRequest || isAdmin;
             const isApproved = req.status === "approved";
             const isRejected = req.status === "rejected";
+            const isResolved = isApproved || isRejected;
+            const canEdit = (isOwnRequest || isAdmin) && !isResolved;
+            const canRevert = isAdmin && isResolved;
+            const canOpenActionMenu = canEdit || canDelete || canRevert;
             const requestStatus = req.status as keyof typeof STATUS_BADGE | undefined;
             const leaveLabel = req.type === "other" && otherType
               ? otherType
@@ -648,28 +720,34 @@ export default function LeavePage() {
                   {canChangeStatus && (
                     <div className="flex gap-2 flex-wrap sm:justify-end">
                       <button
+                        type="button"
+                        disabled={isResolved}
                         onClick={() => {
                           if (req.id) {
                             void updateStatus(String(req.id), "approved");
                           }
                         }}
-                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
-                          isApproved
-                            ? "border-green-500/40 bg-green-500/20 text-green-300"
+                        title={isResolved ? `This request is already ${req.status}.` : "Approve leave request"}
+                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${
+                          isResolved
+                            ? "border-border bg-page-bg text-ink-muted opacity-60"
                             : "border-green-500/25 bg-green-500/10 text-green-400 hover:bg-green-500/20"
                         }`}
                       >
                         <Check className="w-3.5 h-3.5" /> Approve
                       </button>
                       <button
+                        type="button"
+                        disabled={isResolved}
                         onClick={() => {
                           if (req.id) {
                             void updateStatus(String(req.id), "rejected");
                           }
                         }}
-                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors ${
-                          isRejected
-                            ? "border-red-500/40 bg-red-500/20 text-red-300"
+                        title={isResolved ? `This request is already ${req.status}.` : "Reject leave request"}
+                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${
+                          isResolved
+                            ? "border-border bg-page-bg text-ink-muted opacity-60"
                             : "border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20"
                         }`}
                       >
@@ -677,7 +755,7 @@ export default function LeavePage() {
                       </button>
                     </div>
                   )}
-                  {(canEdit || canDelete) && (
+                  {canOpenActionMenu && (
                     <div data-leave-actions className="relative z-20">
                       <button
                         type="button"
@@ -689,7 +767,7 @@ export default function LeavePage() {
                         <MoreVertical className="w-4 h-4" />
                       </button>
                       {openActionMenuId === requestKey && (
-                        <div className="absolute bottom-full right-0 mb-2 z-10 w-36 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
+                        <div className="absolute bottom-full right-0 mb-2 z-10 w-48 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
                           {canEdit && (
                             <button
                               type="button"
@@ -697,6 +775,20 @@ export default function LeavePage() {
                               className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink transition-colors hover:bg-page-bg"
                             >
                               <Pencil className="w-4 h-4" /> Edit
+                            </button>
+                          )}
+                          {canRevert && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenActionMenuId(null);
+                                if (req.id) {
+                                  void revertToPending(String(req.id));
+                                }
+                              }}
+                              className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink transition-colors hover:bg-page-bg"
+                            >
+                              <ArrowLeft className="w-4 h-4" /> Revert to pending
                             </button>
                           )}
                           {canDelete && (

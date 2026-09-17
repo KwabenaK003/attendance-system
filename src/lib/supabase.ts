@@ -3,10 +3,30 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim();
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
-export const SUPABASE_CONFIG_ERROR =
-  !SUPABASE_URL || !SUPABASE_ANON_KEY
-    ? "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local, then restart the Vite dev server."
-    : null;
+function isSupabaseProjectUrl(value: string | undefined) {
+  if (!value) return false;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname.endsWith(".supabase.co");
+  } catch {
+    return false;
+  }
+}
+
+function isBrowserSupabaseKey(value: string | undefined) {
+  // Supabase's current publishable keys start with sb_publishable_. Older
+  // projects can still use their legacy anon JWT, which starts with eyJ.
+  return Boolean(value && /^(sb_publishable_|eyJ)/.test(value));
+}
+
+export const SUPABASE_CONFIG_ERROR = !SUPABASE_URL || !SUPABASE_ANON_KEY
+  ? "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env, then restart the Vite dev server."
+  : !isSupabaseProjectUrl(SUPABASE_URL)
+    ? "VITE_SUPABASE_URL is invalid. Copy the real Project URL from Supabase Dashboard → Connect; do not leave YOUR_PROJECT_REF in .env."
+    : !isBrowserSupabaseKey(SUPABASE_ANON_KEY)
+      ? "VITE_SUPABASE_ANON_KEY is invalid. Copy the sb_publishable_ key (or legacy anon key) from Supabase Dashboard → Connect. Never use a secret or service_role key in this app."
+      : null;
 
 export function assertSupabaseConfigured(): void {
   if (SUPABASE_CONFIG_ERROR) {

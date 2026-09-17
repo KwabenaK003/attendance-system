@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
+import InitialsAvatar from "../components/InitialsAvatar";
+import Skeleton from "../components/Skeleton";
 
 type VisitorHost = {
   full_name?: string | null;
@@ -634,9 +636,16 @@ export default function VisitorsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-ink-muted">Loading...</td>
-                </tr>
+                [0, 1, 2, 3].map((row) => (
+                  <tr key={row} className="border-b border-border/60">
+                    <td className="px-5 py-4"><div className="flex items-center gap-3"><Skeleton className="h-9 w-9 rounded-xl" /><div className="space-y-2"><Skeleton className="h-3 w-32" /><Skeleton className="h-3 w-24" /></div></div></td>
+                    <td className="px-5 py-4"><Skeleton className="h-3 w-20" /></td>
+                    <td className="px-5 py-4"><Skeleton className="h-3 w-28" /></td>
+                    <td className="px-5 py-4"><Skeleton className="h-3 w-24" /></td>
+                    <td className="px-5 py-4"><Skeleton className="h-3 w-20" /></td>
+                    <td className="px-5 py-4"><Skeleton className="ml-auto h-8 w-16" /></td>
+                  </tr>
+                ))
               ) : filteredVisitors.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center">
@@ -648,20 +657,11 @@ export default function VisitorsPage() {
                 </tr>
               ) : (
                 filteredVisitors.map((visitor) => {
-                  const initials = visitor.full_name
-                    ?.split(" ")
-                    .map((part) => part[0])
-                    .join("")
-                    .slice(0, 2)
-                    .toUpperCase() || "?";
-
                   return (
                     <tr key={visitor.id} className="border-b border-border/60 hover:bg-page-bg">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-accent/15 bg-gradient-to-br from-accent/20 to-accent/5 font-display text-xs font-bold text-accent">
-                            {initials}
-                          </div>
+                          <InitialsAvatar name={visitor.full_name} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-medium text-ink">{visitor.full_name}</p>
                             <p className="truncate text-xs text-ink-muted">
