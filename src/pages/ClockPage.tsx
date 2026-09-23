@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { differenceInMinutes, differenceInSeconds, format, parseISO } from "date-fns";
 import {
   Clock, Copy, CheckCircle, XCircle, AlertCircle,
-  Loader2, Camera, ScanFace, Search, UserRound,
+  Loader2, Camera, ScanFace, Search, UserRound, Maximize2, Minimize2, History,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
@@ -73,6 +73,8 @@ interface MemberEntry {
 
 /** The open record held in state — either kind depending on the person. */
 type ActiveRecord = StaffPunch | MemberEntry;
+
+type RecentClockActivity = { id: string; label: string; timestamp: string };
 
 type MessageType = "success" | "error";
 
@@ -294,10 +296,11 @@ async function insertPunchRecord(
 export default function ClockPage({ standalone = false }: ClockPageProps) {
   const { profile } = useAuth();
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
-  const { ready: faceApiReady, loading: faceApiLoading, waitForBlink } = useFaceApi();
+  const { ready: faceApiReady, loading: faceApiLoading, waitForBlink, getDescriptor } = useFaceApi();
 
   const videoRef  = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const clockPageRef = useRef<HTMLDivElement>(null);
 
   const [staffEmployees, setStaffEmployees] = useState<Person[]>([]);
   const [members, setMembers]               = useState<Person[]>([]);
@@ -318,6 +321,14 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const [todayScheduleRecorded, setTodayScheduleRecorded] = useState<boolean | null>(null);
   const [scheduleConfigured, setScheduleConfigured] = useState<boolean | null>(null);
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(defaultSystemSettings);
+  const [recentActivity, setRecentActivity] = useState<RecentClockActivity[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === clockPageRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -534,6 +545,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       setTodayShift(null);
       setTodayScheduleRecorded(null);
       setScheduleConfigured(null);
+      setRecentActivity([]);
       return;
     }
 
@@ -575,6 +587,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       }
 
       const entries = (data || []) as MemberEntry[];
+      setRecentActivity(entries.flatMap((entry) => [
+        { id: `${entry.id}-in`, label: "Clocked in", timestamp: entry.punch_in },
+        ...(entry.punch_out ? [{ id: `${entry.id}-out`, label: "Clocked out", timestamp: entry.punch_out }] : []),
+      ]).sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 3));
       const lastEntry = entries[0] ?? null;
       const entryWindow = lastEntry ? getWindowForPunch(rows, person.id, lastEntry.punch_in) : null;
       if (lastEntry && !lastEntry.punch_out && entryWindow && now > entryWindow.end) {
@@ -609,6 +625,11 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
 
     const punches = (data || []) as StaffPunch[];
+    setRecentActivity(punches.slice(0, 3).map((punch) => ({
+      id: punch.id,
+      label: punch.type === "in" ? "Clocked in" : "Clocked out",
+      timestamp: punch.timestamp,
+    })));
     const lastPunch = punches[0] ?? null;
     if (lastPunch?.type === "in") {
       const punchWindow = getWindowForPunch(rows, person.id, lastPunch.timestamp);
@@ -857,19 +878,32 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       if (!video) throw new Error("Camera element not found.");
       if (!faceApiReady) throw new Error("Face liveness is still loading. Please wait a moment and try again.");
       setMessage({ type: "error", text: "Keep your face centered, eyes open first, then blink slowly once." });
-      if (!(await waitForBlink(video))) {
-        throw new Error("A clear blink was not detected. Keep your face centered, open your eyes, and blink slowly once.");
+      const blinkDetected = await waitForBlink(video);
+      if (!blinkDetected) {
+        // Eye landmarks can be unreliable in dim light or on lower-quality
+        // webcams. Keep face matching and movement verification mandatory,
+        // but do not block a legitimate attendance record solely on blink.
+        setMessage({ type: "success", text: "Blink could not be confirmed; continuing with face and movement verification." });
       }
       const firstPhoto = captureVideoFrame(video);
       await new Promise((resolve) => window.setTimeout(resolve, 850));
       const photo      = captureVideoFrame(video);
       const motion     = await measureFrameMotion(firstPhoto, photo);
       const liveRef    = await createFaceReference(photo);
-      if (!selectedFaceReference.hasFace || !liveRef.hasFace) {
-        throw new Error("Face detection is required. Re-enroll the person in good lighting.");
+      const liveDetection = await getDescriptor(video);
+      if (!selectedFaceReference.hasFace) {
+        throw new Error("Your saved enrollment is incomplete. Re-enroll your face in Settings, then save your account changes.");
       }
-      if (motion < 0.015) {
-        throw new Error("Please move your head slightly and try again so the kiosk can verify liveness.");
+      if (!liveDetection?.descriptor) {
+        throw new Error("No clear face was detected. Face the camera in good light and remove anything covering your face.");
+      }
+      // Face API is available across the browsers we support; native
+      // FaceDetector is not. A successful Face API result is the authority
+      // for whether this live capture contains a face.
+      liveRef.hasFace = true;
+      liveRef.descriptor = Array.from(liveDetection.descriptor);
+      if (motion < 0.006) {
+        throw new Error("Please move your head slightly and try again so the clock can verify liveness.");
       }
       const comparison = compareFaceReferences(selectedFaceReference, liveRef, systemSettings.general.faceRecognitionThreshold);
       setFacePreview(photo);
@@ -896,18 +930,29 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     }
   }
 
+  async function toggleFullscreen(): Promise<void> {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await clockPageRef.current?.requestFullscreen();
+    } catch (error) {
+      setMessage({ type: "error", text: (error as Error).message || "Fullscreen mode is unavailable in this browser." });
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────
 
   return (
     <div
+      ref={clockPageRef}
       className={`mx-auto space-y-6 ${
-        standalone ? "page-ambient max-w-5xl px-4 py-6 sm:px-6" : "page-ambient max-w-4xl"
+        standalone ? "page-ambient min-h-screen max-w-5xl px-4 py-6 sm:px-6" : "page-ambient max-w-4xl"
       }`}
     >
       {deviceBlocked && standalone && (
         <div className="rounded-2xl border border-danger/30 bg-danger/10 px-5 py-4 text-danger">{deviceBlocked}</div>
       )}
-      <div className="animate-fade-up">
+      <div className="flex items-start justify-between gap-4 animate-fade-up">
+        <div>
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
           Time Clock
         </div>
@@ -917,6 +962,13 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
             ? "Select an employee or member then complete face verification to record the punch."
             : "Complete face verification to record your own clock-in or clock-out."}
         </p>
+        </div>
+        {standalone && (
+          <button type="button" onClick={() => void toggleFullscreen()} className="btn-secondary shrink-0" title="Toggle fullscreen kiosk mode">
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <span className="hidden sm:inline">{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</span>
+          </button>
+        )}
       </div>
 
       {/* Station link for management */}
@@ -924,7 +976,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         <div className="card-glow p-5 animate-fade-up">
           <button type="button" onClick={copyStationLink} className="btn-primary">
             <Copy className="w-4 h-4" />
-            {stationLinkCopied ? "Copied" : "Copy Kiosk Link"}
+            {stationLinkCopied ? "Copied" : "Time Clock Link"}
           </button>
         </div>
       )}
@@ -1179,6 +1231,32 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           </div>
         )}
       </div>
+
+      {!standalone && (
+        <section className="card p-5 animate-fade-up" aria-label="Recent clock activity">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="font-display font-semibold text-ink">Recent activity</h3>
+              <p className="text-xs text-ink-muted">Your latest attendance events.</p>
+            </div>
+          </div>
+          {recentActivity.length ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {recentActivity.map((activity) => (
+                <div key={activity.id} className="rounded-xl border border-border bg-page-bg px-3 py-2.5">
+                  <p className="text-sm font-medium text-ink">{activity.label}</p>
+                  <p className="mt-1 text-xs text-ink-muted">{format(parseISO(activity.timestamp), "EEE, MMM d · h:mm a")}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-dashed border-border bg-page-bg px-4 py-5 text-center text-sm text-ink-muted">
+              No attendance activity yet. Your clock-ins and clock-outs will appear here.
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

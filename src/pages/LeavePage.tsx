@@ -636,7 +636,7 @@ export default function LeavePage() {
             onClick={copyLeaveRequestLink}
             className="btn-secondary flex items-center gap-2 text-sm"
           >
-            <Copy className="w-4 h-4" /> {requestLinkCopied ? "Copied" : "Copy Link"}
+            <Copy className="w-4 h-4" /> {requestLinkCopied ? "Copied" : "Leave Request Link"}
           </button>
           <button
             onClick={() => navigate("/leave/admin/new")}
@@ -658,10 +658,34 @@ export default function LeavePage() {
             placeholder="Search by name, department, or leave type…"
           />
         </div>
+        <select className="input sm:w-44" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          {STATUS_FILTERS.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : status[0].toUpperCase() + status.slice(1)}</option>)}
+        </select>
       </div>
 
+      {!loading && visibleRequests.length > 0 && (
+        <div className="card animate-fade-up overflow-x-auto">
+          <table className="w-full min-w-[860px] text-sm">
+            <thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Requester</th><th className="table-header px-5 py-3 text-left">Leave type</th><th className="table-header px-5 py-3 text-left">Dates</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right">Actions</th></tr></thead>
+            <tbody>{visibleRequests.map((req) => {
+              const leaveMember = splitLeaveMember(req.reason);
+              const leaveProfile = req.profiles as { full_name?: string } | undefined;
+              const { otherType } = splitLeaveReason(req.reason);
+              const isResolved = req.status === "approved" || req.status === "rejected";
+              const isOwnRequest = req.user_id === profile?.id;
+              const canEdit = (isOwnRequest || isAdmin) && !isResolved;
+              const canDelete = isOwnRequest || isAdmin;
+              const canRevert = isAdmin && isResolved;
+              const requestStatus = req.status as keyof typeof STATUS_BADGE | undefined;
+              const leaveLabel = req.type === "other" && otherType ? otherType : `${req.type} Leave`;
+              return <tr key={req.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 font-medium text-ink">{leaveMember.memberName || leaveProfile?.full_name || "You"}</td><td className="px-5 py-3 capitalize text-ink-muted">{leaveLabel}</td><td className="px-5 py-3 text-ink-muted">{format(new Date(String(req.start_date)), "MMM d, yyyy")} – {format(new Date(String(req.end_date)), "MMM d, yyyy")}</td><td className="px-5 py-3"><span className={`badge ${STATUS_BADGE[requestStatus ?? "pending"] || "badge-blue"}`}>{req.status}</span></td><td className="px-5 py-3"><div className="flex justify-end gap-2">{(isOwnRequest || isAdmin) && <><button type="button" disabled={isResolved} onClick={() => req.id && void updateStatus(String(req.id), "approved")} className="btn-secondary px-2.5 py-1.5 text-xs disabled:opacity-50"><Check className="h-3.5 w-3.5" />Approve</button><button type="button" disabled={isResolved} onClick={() => req.id && void updateStatus(String(req.id), "rejected")} className="btn-secondary px-2.5 py-1.5 text-xs disabled:opacity-50"><XCircle className="h-3.5 w-3.5" />Reject</button></>}{canEdit && <button type="button" onClick={() => startEditing(req)} className="btn-secondary px-2.5 py-1.5 text-xs"><Pencil className="h-3.5 w-3.5" />Edit</button>}{canRevert && <button type="button" onClick={() => req.id && void revertToPending(String(req.id))} className="btn-secondary px-2.5 py-1.5 text-xs"><ArrowLeft className="h-3.5 w-3.5" />Revert</button>}{canDelete && <button type="button" onClick={() => setRequestToDelete(req)} className="btn-danger px-2.5 py-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Delete</button>}</div></td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      )}
+
       {/* Requests list */}
-      <div className="space-y-3 animate-fade-up">
+      <div className="hidden space-y-3 animate-fade-up">
         {listError && (
           <div className="card flex items-start gap-2 p-4 text-sm text-danger bg-danger/10 border-danger/20">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />

@@ -513,7 +513,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-        <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
+        <div className={`hidden grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
         <div className="card flex h-full min-h-[340px] flex-col p-5">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
@@ -632,7 +632,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="card overflow-hidden p-5">
+      <div className="hidden card overflow-hidden p-5">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
           <h3 className="font-display text-lg font-semibold text-ink">Recent Clock In / Out</h3>

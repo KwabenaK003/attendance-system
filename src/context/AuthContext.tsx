@@ -8,6 +8,7 @@ type Profile = {
   role: string;
   department: string;
   company_name: string;
+  avatar_url?: string | null;
   face_reference: unknown;
   hourly_rate: number;
   created_at?: string;
@@ -30,6 +31,7 @@ type AccountUpdates = Partial<{
   role: string;
   department: string;
   company_name: string;
+  avatar_url: string | null;
   face_reference: unknown;
   hourly_rate: number;
 }>;
@@ -66,7 +68,7 @@ function hasFutureIssuedToken(session: Session | null) {
 }
 
 function isMissingProfileColumnError(error: unknown) {
-  return /(company_name|face_reference)/i.test((error as { message?: string } | null)?.message || "");
+  return /(company_name|face_reference|avatar_url)/i.test((error as { message?: string } | null)?.message || "");
 }
 
 function getFallbackFullName(authUser: User | null | undefined) {
@@ -83,6 +85,7 @@ function buildResolvedProfile(authUser: User | null | undefined, currentProfile:
     role: currentProfile?.role || authUser?.user_metadata?.role || DEFAULT_SIGNED_IN_ROLE,
     department: currentProfile?.department ?? authUser?.user_metadata?.department ?? "",
     company_name: currentProfile?.company_name ?? authUser?.user_metadata?.company_name ?? "",
+    avatar_url: currentProfile?.avatar_url ?? authUser?.user_metadata?.avatar_url ?? null,
     face_reference: currentProfile?.face_reference ?? authUser?.user_metadata?.face_reference ?? null,
     hourly_rate: currentProfile?.hourly_rate ?? authUser?.user_metadata?.hourly_rate ?? 0,
   };
@@ -167,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: DEFAULT_SIGNED_IN_ROLE,
       department: authUser.user_metadata?.department || "",
       company_name: authUser.user_metadata?.company_name || "",
+      avatar_url: authUser.user_metadata?.avatar_url || null,
       face_reference: authUser.user_metadata?.face_reference || null,
       hourly_rate: Number(authUser.user_metadata?.hourly_rate || 0),
     };
@@ -271,6 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // to elevate their own role from the profile settings screen.
       role: nextProfile?.role || DEFAULT_SIGNED_IN_ROLE,
       company_name: typeof updates.company_name === "string" ? updates.company_name : nextProfile?.company_name || "",
+      avatar_url: updates.avatar_url !== undefined ? updates.avatar_url : nextProfile?.avatar_url || null,
       face_reference: updates.face_reference !== undefined ? updates.face_reference : nextProfile?.face_reference || null,
       hourly_rate: typeof updates.hourly_rate === "number" ? updates.hourly_rate : Number(nextProfile?.hourly_rate || 0),
     };
@@ -299,6 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...(updates.role !== undefined ? { role: updates.role } : {}),
       ...(updates.department !== undefined ? { department: updates.department } : {}),
       ...(updates.company_name !== undefined ? { company_name: updates.company_name } : {}),
+      ...(updates.avatar_url !== undefined ? { avatar_url: updates.avatar_url } : {}),
       ...(updates.face_reference !== undefined ? { face_reference: updates.face_reference } : {}),
       ...(updates.hourly_rate !== undefined ? { hourly_rate: updates.hourly_rate } : {}),
     };

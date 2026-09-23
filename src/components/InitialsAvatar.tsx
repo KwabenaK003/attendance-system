@@ -1,5 +1,6 @@
 type InitialsAvatarProps = {
   name?: string | null;
+  src?: string | null;
   size?: "sm" | "md" | "lg";
   className?: string;
 };
@@ -28,7 +29,7 @@ function paletteForName(name?: string | null) {
   return PALETTES[hash % PALETTES.length];
 }
 
-export default function InitialsAvatar({ name, size = "md", className = "" }: InitialsAvatarProps) {
+export default function InitialsAvatar({ name, src, size = "md", className = "" }: InitialsAvatarProps) {
   const sizeClass = {
     sm: "h-9 w-9 text-xs rounded-xl",
     md: "h-11 w-11 text-sm rounded-xl",
@@ -42,6 +43,7 @@ export default function InitialsAvatar({ name, size = "md", className = "" }: In
       title={name || "Unknown person"}
     >
       {initialsFromName(name)}
+      {src && <img src={src} alt="" className="absolute inset-0 h-full w-full rounded-[inherit] object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
     </div>
   );
 }

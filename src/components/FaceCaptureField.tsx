@@ -3,10 +3,12 @@ import { Camera, CheckCircle, RefreshCcw, Trash2, AlertCircle } from "lucide-rea
 import {
   captureVideoFrame,
   createFaceReference,
+  measureFrameMotion,
   normalizeFaceReference,
   waitForVideoReady,
 } from "../lib/faceVerification";
 import type { FaceReference, FaceEnrollment } from "../types";
+import { useFaceApi } from "../hooks/useFaceApi";
 
 function getCameraErrorMessage(error: unknown): string {
   const err = error as { name?: string; message?: string } | null;
@@ -40,11 +42,12 @@ interface FaceCaptureFieldProps {
 
 export default function FaceCaptureField({
   label = "Face Enrollment",
-  helperText = "Capture a front-facing photo in good light.",
+  helperText = "Face the camera in good light, blink once, then move your head slightly before capturing.",
   value,
   onChange,
   existingReference = null,
 }: FaceCaptureFieldProps) {
+  const { ready: faceModelsReady, loading: faceModelsLoading, getDescriptor, waitForBlink } = useFaceApi();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -124,10 +127,31 @@ export default function FaceCaptureField({
     setBusy(true);
     setError("");
     try {
-      const photo = captureVideoFrame(videoRef.current!);
+      const video = videoRef.current;
+      if (!video || !cameraReady) throw new Error("Camera is still preparing. Please wait a moment.");
+      if (!faceModelsReady) throw new Error("Face verification is still loading. Please wait a moment and try again.");
+
+      // Enrollment now uses the same live checks as clocking: ask for a blink,
+      // then ensure the camera saw a face that moved between two frames.
+      // A missed blink alone is tolerated because eye landmarks vary greatly
+      // across cameras and lighting; face detection and movement stay required.
+      const blinkDetected = await waitForBlink(video);
+      const firstPhoto = captureVideoFrame(video);
+      await new Promise((resolve) => window.setTimeout(resolve, 850));
+      const photo = captureVideoFrame(video);
+      const motion = await measureFrameMotion(firstPhoto, photo);
+      if (motion < 0.006) throw new Error("Move your head slightly, then try again so we can verify this is a live enrollment.");
+
+      const detection = await getDescriptor(video);
+      if (!detection?.descriptor) throw new Error("No clear face was detected. Face the camera in good light and remove anything covering your face.");
       const reference = await createFaceReference(photo);
+      // Face API provides a dependable confirmation even in browsers that do
+      // not expose the experimental native FaceDetector API used for cropping.
+      reference.hasFace = true;
+      reference.descriptor = Array.from(detection.descriptor);
       onChange?.({ photo, reference });
       stopCamera();
+      if (!blinkDetected) setError("Blink was not confirmed, but your face and movement were verified successfully. Save your changes to finish enrollment.");
     } catch (err) {
       setError((err as Error).message || "Failed to capture face reference");
     } finally {
@@ -180,9 +204,9 @@ export default function FaceCaptureField({
             </button>
           ) : (
             <>
-              <button onClick={handleCapture} type="button" disabled={busy || !cameraReady} className="btn-primary">
+              <button onClick={handleCapture} type="button" disabled={busy || !cameraReady || !faceModelsReady} className="btn-primary">
                 <CheckCircle className="w-4 h-4" />
-                {busy ? "Capturing…" : cameraReady ? "Capture Face" : "Preparing Camera..."}
+                {busy ? "Verifying…" : faceModelsLoading ? "Loading verification…" : cameraReady ? "Verify & Capture Face" : "Preparing Camera..."}
               </button>
               <button onClick={stopCamera} type="button" disabled={busy} className="btn-secondary">
                 <RefreshCcw className="w-4 h-4" /> Cancel

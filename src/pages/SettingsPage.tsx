@@ -15,6 +15,8 @@ import {
   User,
 } from "lucide-react";
 import FaceCaptureField from "../components/FaceCaptureField";
+import AvatarUpload from "../components/AvatarUpload";
+import InitialsAvatar from "../components/InitialsAvatar";
 import { useAuth } from "../context/AuthContext";
 import type { WeekDayValue } from "../lib/systemSettings";
 import {
@@ -52,6 +54,7 @@ type AccountFormState = {
   full_name: string;
   department: string;
   company_name: string;
+  avatar_url: string;
   hourly_rate: string | number;
   faceEnrollment: FaceEnrollment | null;
 };
@@ -195,6 +198,7 @@ export default function SettingsPage() {
     full_name:      profile?.full_name    || "",
     department:     profile?.department   || "",
     company_name:   profile?.company_name || "",
+    avatar_url:     profile?.avatar_url || "",
     hourly_rate:    profile?.hourly_rate  || "",
     faceEnrollment: null,
   });
@@ -210,6 +214,7 @@ export default function SettingsPage() {
       full_name:      profile?.full_name    || "",
       department:     profile?.department   || "",
       company_name:   profile?.company_name || "",
+      avatar_url:     profile?.avatar_url || "",
       hourly_rate:    profile?.hourly_rate  || "",
       faceEnrollment: null,
     });
@@ -286,6 +291,7 @@ export default function SettingsPage() {
           full_name:      accountForm.full_name,
           department:     accountForm.department,
           company_name:   accountForm.company_name,
+          avatar_url:     accountForm.avatar_url || null,
           hourly_rate:    parseFloat(String(accountForm.hourly_rate)) || 0,
           face_reference: accountForm.faceEnrollment?.cleared
             ? null
@@ -536,9 +542,7 @@ export default function SettingsPage() {
       <div className="space-y-5">
         <SectionCard title="Profile Information" description="Everything that already belonged to your account area stays here: profile details, account information, and Face Clock guidance.">
           <div className="mb-6 flex items-center gap-4 rounded-2xl border border-border bg-page-bg p-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-xl font-bold text-primary">
-              {accountForm.full_name?.split(" ").map((name) => name[0]).join("").slice(0, 2).toUpperCase() || "?"}
-            </div>
+            <InitialsAvatar name={accountForm.full_name} src={accountForm.avatar_url} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-base font-medium text-ink">{accountForm.full_name || "Your Name"}</p>
               <p className="truncate text-sm text-ink-muted">{user?.email}</p>
@@ -556,6 +560,7 @@ export default function SettingsPage() {
               </select>
             </Field>
             <Field label="Hourly Rate ($)"><input type="number" className="input" value={accountForm.hourly_rate} onChange={setAccountField("hourly_rate")} placeholder="0" /></Field>
+            <Field label="Profile Photo"><AvatarUpload name={accountForm.full_name} value={accountForm.avatar_url} onChange={(avatar_url) => setAccountForm((current) => ({ ...current, avatar_url }))} /></Field>
           </div>
 
           <FaceCaptureField
