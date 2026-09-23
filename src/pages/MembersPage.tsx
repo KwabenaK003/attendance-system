@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import FaceCaptureField from "../components/FaceCaptureField";
 import InitialsAvatar from "../components/InitialsAvatar";
+import AvatarUpload from "../components/AvatarUpload";
 import Skeleton from "../components/Skeleton";
 import type { FaceEnrollment } from "../types";
 import { DEPARTMENT_OPTIONS, STAFF_ROLE_OPTIONS, getRoleLabel } from "../lib/workforce";
@@ -21,6 +22,7 @@ type MemberFormState = {
   company_name: string;
   email: string;
   department: string;
+  avatar_url: string;
   phone: string;
   address: string;
   date_of_birth: string;
@@ -40,14 +42,14 @@ type MemberImportRow = LooseRow & {
   created_by?: string | null;
 };
 
-function isMissingMembersFaceReferenceColumn(error: unknown) {
+function isMissingMembersPhotoColumn(error: unknown) {
   const message = (error as { message?: string } | null)?.message || "";
-  return /face_reference/i.test(message) && /members/i.test(message);
+  return /(face_reference|avatar_url)/i.test(message) && /members/i.test(message);
 }
 
 const EMPTY_FORM: MemberFormState = {
   full_name: "", role: "employee", company_name: "", email: "",
-  department: "", phone: "", address: "",
+  department: "", avatar_url: "", phone: "", address: "",
   date_of_birth: "", gender: "", employment_type: "full_time",
   start_date: "", employee_id: "", emergency_contact_name: "",
   emergency_contact_phone: "", notes: "",
@@ -127,6 +129,10 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
         <div>
           <label className="label">Full Name *</label>
           <input className="input" placeholder="John Doe" value={form.full_name} onChange={set("full_name")} />
+        </div>
+        <div>
+          <label className="label">Profile Photo</label>
+          <AvatarUpload name={form.full_name} value={form.avatar_url} onChange={(avatar_url) => setForm((current) => ({ ...current, avatar_url }))} />
         </div>
         <div>
           <label className="label">Email *</label>
@@ -429,6 +435,8 @@ export default function MembersPage() {
   const [members, setMembers] = useState<LooseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [showCSV, setShowCSV] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState("");
@@ -478,6 +486,7 @@ export default function MembersPage() {
       company_name: form.company_name || null,
       email: form.email,
       department: form.department || null,
+      avatar_url: form.avatar_url || null,
       phone: form.phone || null,
       address: form.address || null,
       date_of_birth: form.date_of_birth || null,
@@ -498,15 +507,16 @@ export default function MembersPage() {
       ({ error } = await supabase.from("members").insert({ ...payloadWithFaceReference, created_by: profile.id }));
     }
 
-    if (error && isMissingMembersFaceReferenceColumn(error)) {
+    if (error && isMissingMembersPhotoColumn(error)) {
+      const { avatar_url: _avatarUrl, ...payloadWithoutAvatar } = payload;
       if (form.id) {
-        ({ error } = await supabase.from("members").update(payload).eq("id", form.id));
+        ({ error } = await supabase.from("members").update(payloadWithoutAvatar).eq("id", form.id));
       } else {
-        ({ error } = await supabase.from("members").insert({ ...payload, created_by: profile.id }));
+        ({ error } = await supabase.from("members").insert({ ...payloadWithoutAvatar, created_by: profile.id }));
       }
 
-      if (!error && faceReference) {
-        setSaveError("Member details were saved, but face enrollment could not be stored because the `members.face_reference` column is missing. Run `supabase/expand_members_staff_fields.sql` in the Supabase SQL editor, then enroll the face again.");
+      if (!error && (faceReference || form.avatar_url)) {
+        setSaveError("Member details were saved, but the photo or face enrollment could not be stored. Run `supabase/add_avatar_support.sql` and `supabase/expand_members_staff_fields.sql` in the Supabase SQL editor, then save again.");
       }
     }
 
@@ -552,18 +562,18 @@ export default function MembersPage() {
 
   const filtered = members
     .filter(m =>
-      !search ||
-      m.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      m.email?.toLowerCase().includes(search.toLowerCase()) ||
-      m.department?.toLowerCase().includes(search.toLowerCase()) ||
-      m.company_name?.toLowerCase().includes(search.toLowerCase()) ||
-      m.employee_id?.toLowerCase().includes(search.toLowerCase())
+      (departmentFilter === "all" || m.department === departmentFilter) &&
+      (roleFilter === "all" || m.role === roleFilter) &&
+      (!search ||
+        m.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+        m.email?.toLowerCase().includes(search.toLowerCase()) ||
+        m.department?.toLowerCase().includes(search.toLowerCase()) ||
+        m.company_name?.toLowerCase().includes(search.toLowerCase()) ||
+        m.employee_id?.toLowerCase().includes(search.toLowerCase()))
     )
     .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" }));
 
   const initials = (name: string | null | undefined) => name?.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "?";
-  const departmentsCount = new Set(members.map((member) => member.department).filter(Boolean)).size;
-  const faceCount = members.filter((member) => member.face_reference || member.face_enrolled).length;
   const selectedMember = editingViaRoute
     ? members.find((member) => String(member.id) === memberId) || null
     : null;
@@ -644,30 +654,46 @@ export default function MembersPage() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 animate-fade-up">
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Members</p>
-          <p className="mt-1 font-display text-xl font-semibold text-ink">{members.length}</p>
-        </div>
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Departments</p>
-          <p className="mt-1 font-display text-xl font-semibold text-ink">{departmentsCount}</p>
-        </div>
-        <div className="card px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Face Profiles</p>
-          <p className="mt-1 font-display text-xl font-semibold text-ink">{faceCount}</p>
-        </div>
+      {/* Search */}
+      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
+        <div className="relative flex-1"><Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" /><input className="input pl-10" placeholder="Search name, email, department, employee ID…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        <select className="input sm:w-48" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{Array.from(new Set(members.map((member) => String(member.department || "")).filter(Boolean))).sort().map((department) => <option key={department} value={department}>{department}</option>)}</select>
+        <select className="input sm:w-40" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="all">All roles</option>{Array.from(new Set(members.map((member) => String(member.role || "employee")))).sort().map((role) => <option key={role} value={role}>{getRoleLabel(role)}</option>)}</select>
       </div>
 
-      {/* Search */}
-      <div className="relative card p-4 animate-fade-up">
-        <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
-          <input className="input pl-10" placeholder="Search name, email, department, employee ID…"
-          value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
+      {!loading && filtered.length > 0 && (
+        <div className="card animate-fade-up overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead className="bg-page-bg">
+              <tr className="border-b border-border">
+                <th className="table-header px-5 py-3 text-left">Member</th>
+                <th className="table-header px-5 py-3 text-left">Role</th>
+                <th className="table-header px-5 py-3 text-left">Department</th>
+                <th className="table-header px-5 py-3 text-left">Employment</th>
+                <th className="table-header px-5 py-3 text-left">Face ID</th>
+                <th className="table-header px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((member) => (
+                <tr key={member.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg">
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3"><InitialsAvatar name={member.full_name} src={member.avatar_url as string | null | undefined} size="sm" /><div><p className="font-medium text-ink">{member.full_name}</p><p className="text-xs text-ink-muted">{member.email || member.employee_id || "No contact details"}</p></div></div>
+                  </td>
+                  <td className="px-5 py-3"><span className={`badge ${ROLE_BADGE[(member.role || "employee") as keyof typeof ROLE_BADGE] || "badge-blue"}`}>{getRoleLabel(member.role)}</span></td>
+                  <td className="px-5 py-3 text-ink-muted">{member.department || "—"}</td>
+                  <td className="px-5 py-3 capitalize text-ink-muted">{String(member.employment_type || "—").replace("_", " ")}</td>
+                  <td className="px-5 py-3"><span className={`badge ${member.face_reference || member.face_enrolled ? "badge-green" : "badge-yellow"}`}>{member.face_reference || member.face_enrolled ? "Enrolled" : "Not enrolled"}</span></td>
+                  <td className="px-5 py-3"><div className="flex justify-end gap-2"><button type="button" onClick={() => member.id && navigate(`/members/${member.id}/edit`)} className="btn-secondary px-3 py-1.5 text-xs"><Edit2 className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => member.id && setDeleteId(String(member.id))} className="btn-danger px-3 py-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Delete</button></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* List */}
-      {loading ? (
+      <div className="hidden">{loading ? (
         <div className="card divide-y divide-border overflow-hidden">
           {[0, 1, 2, 3].map((row) => (
             <div key={row} className="flex items-center gap-3 px-5 py-4">
@@ -686,10 +712,10 @@ export default function MembersPage() {
         <div className="card overflow-visible animate-fade-up">
           <div className="divide-y divide-border overflow-visible">
             {filtered.map(m => (
-              <div key={m.id} className="px-4 py-4 sm:px-5 hover:bg-page-bg transition-colors overflow-visible">
+              <div key={m.id} className="list-row-lift px-4 py-4 sm:px-5 hover:bg-page-bg overflow-visible">
                 <div className="flex items-start gap-3">
                   <div className="relative">
-                    <InitialsAvatar name={m.full_name} />
+                    <InitialsAvatar name={m.full_name} src={m.avatar_url as string | null | undefined} />
                     {(m.face_reference || m.face_enrolled) && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
                         <Camera className="w-2.5 h-2.5 text-slate-950" />
@@ -763,7 +789,7 @@ export default function MembersPage() {
             ))}
           </div>
         </div>
-      )}
+      )}</div>
 
       {/* Delete confirm */}
       {deleteId && (

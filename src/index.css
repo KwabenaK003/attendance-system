@@ -88,6 +88,16 @@
   box-shadow: var(--shadow-card), 0 0 0 1px rgba(37, 99, 235, 0.06);
 }
 
+.stat-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09); }
+.list-row-lift { transition: transform 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease; }
+.list-row-lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card, .list-row-lift { transition: none; }
+  .stat-card:hover, .list-row-lift:hover { transform: none; }
+}
+
 /* Primary button — normal blue */
 .btn-primary {
   background: #2563eb;

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
@@ -18,6 +18,7 @@ import LicenseGate from "./components/LicenseGate";
 import LicensePage from "./pages/LicensePage";
 import AdminControlsPage from "./pages/AdminControlsPage";
 import SchedulesPage from "./pages/SchedulesPage";
+import PayrollPage from "./pages/PayrollPage";
 import { kioskIsConfigured } from "./lib/kiosk";
 import Skeleton from "./components/Skeleton";
 
@@ -71,6 +72,29 @@ function LicenseGateByKiosk({ children }: { children: ReactNode }) {
 }
 
 function AppRoutes() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      "/login": "Sign in",
+      "/dashboard": "Overview",
+      "/clock": "Time Clock",
+      "/clock/station": "Clock Station",
+      "/timesheets": "Attendance Log",
+      "/leave": "Leave Requests",
+      "/payroll": "Payroll",
+      "/reports": "Reports",
+      "/members": "Members",
+      "/visitors": "Visitors",
+      "/users": "Users",
+      "/admin-controls": "Admin Controls",
+      "/schedules": "Schedule",
+      "/settings": "Settings",
+    };
+    const title = Object.entries(titles).find(([path]) => location.pathname === path || location.pathname.startsWith(`${path}/`))?.[1] || "AttendanceIQ";
+    document.title = title === "AttendanceIQ" ? title : `${title} · AttendanceIQ`;
+  }, [location.pathname]);
+
   return (
     <Routes>
       <Route path="/login" element={<AuthPageRoute />} />
@@ -85,6 +109,7 @@ function AppRoutes() {
       <Route path="/leave/admin/new" element={<RequireAuth><LeavePage /></RequireAuth>} />
       <Route path="/leave/:requestId/edit" element={<RequireAuth><LeavePage /></RequireAuth>} />
       <Route path="/leave" element={<RequireAuth><LeavePage /></RequireAuth>} />
+      <Route path="/payroll" element={<RequireAuth adminOnly><PayrollPage /></RequireAuth>} />
       <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
       <Route path="/members/new" element={<RequireAuth><MembersPage /></RequireAuth>} />
       <Route path="/members/:memberId/edit" element={<RequireAuth><MembersPage /></RequireAuth>} />

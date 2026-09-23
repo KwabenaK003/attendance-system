@@ -6,12 +6,13 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { formatDistanceToNow } from "date-fns";
 import { getRoleLabel, hasManagementAccess } from "../lib/workforce";
+import InitialsAvatar from "./InitialsAvatar";
 import { buildMemberActivity, sortTimeActivity } from "../lib/timeRecords";
 import type { TimeActivity } from "../lib/timeRecords";
 import {
   Clock, LayoutDashboard, Users, FileText,
   Calendar, BarChart2, Settings, LogOut, Menu, X, ChevronRight,
-  Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList, UserPlus
+  Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList, UserPlus, WalletCards
 } from "lucide-react";
 
 const navSections = [
@@ -35,7 +36,10 @@ const navSections = [
   },
   {
     label: "Activity",
-    items: [{ to: "/leave", icon: Calendar, label: "Leave Request" }],
+    items: [
+      { to: "/leave", icon: Calendar, label: "Leave Request" },
+      { to: "/payroll", icon: WalletCards, label: "Payroll" },
+    ],
   },
   {
     label: "System",
@@ -614,9 +618,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               </button>
             </div>
             <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-page-bg px-2 py-1">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/15 font-display text-xs font-bold text-primary">
-                {initials}
-              </div>
+              <InitialsAvatar name={displayName} src={profile?.avatar_url} size="sm" className="h-7 w-7 rounded-md text-[10px]" />
               <div className="hidden min-w-0 sm:block">
                 <p className="max-w-36 truncate text-sm font-medium leading-4 text-ink">{displayName}</p>
                 <p className="text-[11px] leading-4 text-ink-muted">{getRoleLabel(profile?.role)}</p>

@@ -320,6 +320,7 @@ export default function VisitorsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [editingVisitor, setEditingVisitor] = useState<VisitorFormState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<VisitorRow | null>(null);
@@ -549,6 +550,7 @@ export default function VisitorsPage() {
     }
 
     return visitors.filter((visitor) => {
+      if (dateFilter === "today" && String(visitor.visit_date) !== format(new Date(), "yyyy-MM-dd")) return false;
       const haystack = [
         visitor.full_name,
         visitor.company_name,
@@ -563,7 +565,7 @@ export default function VisitorsPage() {
 
       return haystack.includes(query);
     });
-  }, [search, visitors]);
+  }, [dateFilter, search, visitors]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -611,14 +613,14 @@ export default function VisitorsPage() {
         </div>
       )}
 
-      <div className="relative animate-fade-up">
-        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
-        <input
+      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
+        <div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input
           className="input pl-10"
           placeholder="Search visitor, company, purpose, or host member..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-        />
+        /></div>
+        <select className="input sm:w-44" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}><option value="all">All visits</option><option value="today">Today</option></select>
       </div>
 
       <div className="card animate-fade-up overflow-hidden">
@@ -658,7 +660,7 @@ export default function VisitorsPage() {
               ) : (
                 filteredVisitors.map((visitor) => {
                   return (
-                    <tr key={visitor.id} className="border-b border-border/60 hover:bg-page-bg">
+                    <tr key={visitor.id} className="list-row-lift border-b border-border/60 hover:bg-page-bg">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <InitialsAvatar name={visitor.full_name} size="sm" />

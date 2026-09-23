@@ -368,8 +368,9 @@ export default function TimesheetsPage() {
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [sessions, setSessions]   = useState<Session[]>([]);
   const [loading, setLoading]     = useState<boolean>(true);
-  const [totalMinutes, setTotalMinutes] = useState<number>(0);
   const [showMonthPicker, setShowMonthPicker] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [personTypeFilter, setPersonTypeFilter] = useState("all");
   const isAdmin = hasManagementAccess(profile?.role);
 
   useEffect(() => {
@@ -470,8 +471,6 @@ export default function TimesheetsPage() {
           new Date(right.clockIn).getTime() - new Date(left.clockIn).getTime()
       );
 
-    const total = pairs.reduce((sum, p) => sum + p.minutes, 0);
-    setTotalMinutes(total);
     setSessions(pairs);
     setLoading(false);
   }
@@ -534,8 +533,11 @@ export default function TimesheetsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const overtimeMinutes = Math.max(0, totalMinutes - 40 * 60);
-  const regularMinutes  = Math.min(totalMinutes, 40 * 60);
+  const visibleSessions = sessions.filter((session) => {
+    const matchesType = personTypeFilter === "all" || session.personType.toLowerCase() === personTypeFilter;
+    const query = searchQuery.trim().toLowerCase();
+    return matchesType && (!query || [session.personName, session.personType, session.date].filter(Boolean).join(" ").toLowerCase().includes(query));
+  });
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -654,24 +656,9 @@ export default function TimesheetsPage() {
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 animate-fade-up">
-        {(
-          [
-            { label: "Total Hours", value: formatDuration(totalMinutes), color: overtimeMinutes > 0 ? "text-warn" : "text-ink-muted" },
-            { label: "Regular",     value: formatDuration(regularMinutes), color: "text-info" },
-            {
-              label: "Overtime",
-              value: formatDuration(overtimeMinutes),
-              color: overtimeMinutes > 0 ? "text-warn" : "text-ink-muted",
-            },
-          ] as const
-        ).map(({ label, value, color }) => (
-          <div key={label} className="card p-4 text-center">
-            <p className="text-ink-muted text-xs">{label}</p>
-            <p className={`font-display font-bold text-xl mt-1 ${color}`}>{value}</p>
-          </div>
-        ))}
+      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
+        <input className="input flex-1" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search person or attendance type…" />
+        <select className="input sm:w-40" value={personTypeFilter} onChange={(event) => setPersonTypeFilter(event.target.value)}><option value="all">All people</option><option value="employee">Employees</option><option value="member">Members</option></select>
       </div>
 
       {/* Sessions table */}
@@ -694,15 +681,15 @@ export default function TimesheetsPage() {
                     Loading…
                   </td>
                 </tr>
-              ) : sessions.length === 0 ? (
+              ) : visibleSessions.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="text-center py-12">
                     <Clock className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-                    <p className="text-ink-muted">No time records for this month</p>
+                    <p className="text-ink-muted">{sessions.length ? "No attendance records match your filters" : "No time records for this month"}</p>
                   </td>
                 </tr>
               ) : (
-                sessions.map((s) => (
+                visibleSessions.map((s) => (
                   <tr
                     key={`${s.source}-${s.id}`}
                     className="border-b border-border/60 transition-colors hover:bg-page-bg cursor-pointer focus-within:bg-page-bg"
