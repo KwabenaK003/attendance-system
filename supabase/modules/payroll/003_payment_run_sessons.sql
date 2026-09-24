@@ -15,9 +15,6 @@ create index if not exists idx_payment_run_sessions_member_entry on public.payme
 create unique index if not exists payment_run_sessions_one_punch on public.payment_run_sessions(punch_id) where punch_id is not null;
 create unique index if not exists payment_run_sessions_one_member_entry on public.payment_run_sessions(member_entry_id) where member_entry_id is not null;
 
--- Source-row references make it easy to exclude already paid time from the
--- next pending-payment run. For employee sessions, both the clock-in and
--- matching clock-out punch receive the same run reference.
 alter table public.punches add column if not exists payment_run_id uuid references public.payment_runs(id) on delete set null;
 alter table public.punches add column if not exists paid_at timestamptz;
 alter table public.member_entries add column if not exists payment_run_id uuid references public.payment_runs(id) on delete set null;
@@ -26,7 +23,6 @@ alter table public.member_entries add column if not exists paid_at timestamptz;
 create index if not exists idx_punches_payment_run on public.punches(payment_run_id);
 create index if not exists idx_member_entries_payment_run on public.member_entries(payment_run_id);
 
--- Install after production_hardening.sql, which provides is_admin_or_manager.
 alter table public.payment_runs enable row level security;
 alter table public.payment_run_items enable row level security;
 alter table public.payment_run_sessions enable row level security;

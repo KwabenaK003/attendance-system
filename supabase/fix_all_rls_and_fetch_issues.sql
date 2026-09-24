@@ -14,6 +14,11 @@
 
 create extension if not exists pgcrypto;
 
+-- Required optional fields used by account and member photo uploads. Keeping
+-- these here makes this the single, repeatable database repair entry point.
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.members add column if not exists avatar_url text;
+
 -- ─── 1. Robust Admin / Manager Detection Function ─────────────────────────────
 create or replace function public.is_admin_or_manager()
 returns boolean

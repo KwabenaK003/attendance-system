@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { format, parseISO } from "date-fns";
 import { AlertCircle, CheckCircle2, CreditCard, MoreVertical, Pencil, Plus, Search, Trash2, WalletCards } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -7,11 +8,11 @@ import InitialsAvatar from "../components/InitialsAvatar";
 
 type PaymentMethod = "bank_transfer" | "mobile_money" | "cash" | "other";
 type PayableSession = { source: "employee" | "member"; punchInId?: string | null; punchOutId?: string | null; entryId?: string | null };
-type PayrollPersonOption = { id: string; full_name: string | null; role: string | null; employment_type: string | null; kind: "employee" | "member" };
+type PayrollPersonOption = { id: string; full_name: string | null; role: string | null; employment_type: string | null; hourly_rate: number | null; kind: "employee" | "member" };
 type PendingPayment = {
   key: string; personId: string; personName: string; personKind: "employee" | "member"; rate: number;
   role: string; employmentStatus: "full_time" | "part_time" | "contract" | "internship";
-  regularMinutes: number; overtimeMinutes: number; regularAmount: number; overtimeAmount: number; totalAmount: number; sessions: PayableSession[]; avatarUrl?: string | null;
+  regularMinutes: number; overtimeMinutes: number; regularAmount: number; overtimeAmount: number; totalAmount: number; sessions: PayableSession[]; avatarUrl?: string | null; paymentRunId?: string; paymentRunItemId?: string; isManualPayroll?: boolean; paymentMethod?: PaymentMethod; payrollDate?: string; paymentReference?: string | null; note?: string | null;
 };
 type PayrollFormValues = { key: string; personId?: string; personName?: string; personKind?: "employee" | "member"; role: string; employmentStatus: PendingPayment["employmentStatus"]; regularHours: number; overtimeHours: number; normalRate: number; overtimeBaseRate: number; note: string };
 type PaymentRunItem = { id: string; payment_run_id: string; person_kind: string; person_id: string; person_name: string; person_role: string | null; employment_status: string | null; hourly_rate: number; regular_minutes: number; overtime_minutes: number; overtime_multiplier: number; regular_amount: number; overtime_amount: number; total_amount: number; payment_reference: string | null; note: string | null };
@@ -55,6 +56,8 @@ export default function PayrollPage() {
   const [editingPending, setEditingPending] = useState<PendingPayment | null>(null);
   const [dismissingPending, setDismissingPending] = useState<PendingPayment | null>(null);
   const [dismissing, setDismissing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const payrollFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void loadPayroll(); }, [profile?.id]);
 
@@ -64,17 +67,16 @@ export default function PayrollPage() {
     // Keep this roster query identical in spirit to the Schedule page. It must
     // not depend on the pending-payments RPC: staff still need to be visible
     // in the selector if payroll data has an error or is empty.
-    const [pendingResult, profilesResult, membersResult] = await Promise.all([
-      supabase.rpc("get_pending_payments"),
-      supabase.from("profiles").select("id, full_name").order("full_name"),
-      supabase.from("members").select("id, full_name").order("full_name"),
+    const [profilesResult, membersResult] = await Promise.all([
+      supabase.from("profiles").select("id, full_name, role, hourly_rate").order("full_name"),
+      supabase.from("members").select("id, full_name, role, employment_type, hourly_rate").order("full_name"),
     ]);
 
     // Query payment_runs with safe column selection for payment_run_items to avoid PostgREST schema cache crashes
     let runsData: PaymentRun[] = [];
     const runsResult = await supabase
       .from("payment_runs")
-      .select("id, run_date, payment_method, status, total_amount, created_at, payment_run_items(id, person_kind, person_id, person_name, hourly_rate, regular_minutes, overtime_minutes, total_amount)")
+      .select("id, run_date, payment_method, status, total_amount, created_at, payment_run_items(id, person_kind, person_id, person_name, person_role, employment_status, hourly_rate, regular_minutes, overtime_minutes, regular_amount, overtime_amount, total_amount, payment_reference, note)")
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -95,27 +97,18 @@ export default function PayrollPage() {
     }
 
     const roster = [
-      ...((profilesResult.data || []) as Array<Pick<PayrollPersonOption, "id" | "full_name">>).map((person) => ({ ...person, role: "employee", employment_type: "full_time", kind: "employee" as const })),
-      ...((membersResult.data || []) as Array<Pick<PayrollPersonOption, "id" | "full_name">>).map((person) => ({ ...person, role: "employee", employment_type: "full_time", kind: "member" as const })),
+      ...((profilesResult.data || []) as Array<Omit<PayrollPersonOption, "kind" | "employment_type">>).map((person) => ({ ...person, role: person.role || "employee", employment_type: "full_time", hourly_rate: Number(person.hourly_rate || 0), kind: "employee" as const })),
+      ...((membersResult.data || []) as Array<Omit<PayrollPersonOption, "kind">>).map((person) => ({ ...person, employment_type: person.employment_type === "intern" ? "internship" : person.employment_type || "full_time", hourly_rate: Number(person.hourly_rate || 0), kind: "member" as const })),
     ].sort((left, right) => (left.full_name || "").localeCompare(right.full_name || ""));
     setPayrollPeople(roster);
-
-    if (pendingResult.error) {
-      setError(payrollSchemaHelp(pendingResult.error.message));
-      setLoading(false);
-      return;
-    }
-
-    setPending(((pendingResult.data || []) as Array<Record<string, unknown>>).map((row) => ({
-      key: `${row.person_kind}:${row.person_id}`,
-      personId: String(row.person_id), personName: String(row.person_name || "Unknown"),
-      personKind: row.person_kind === "member" ? "member" : "employee", rate: Number(row.hourly_rate || 0),
-      role: String(row.person_role || "employee"), employmentStatus: ["full_time", "part_time", "contract", "internship"].includes(String(row.employment_status)) ? String(row.employment_status) as PendingPayment["employmentStatus"] : "full_time",
-      regularMinutes: Number(row.regular_minutes || 0), overtimeMinutes: Number(row.overtime_minutes || 0),
-      regularAmount: Number(row.regular_amount || 0), overtimeAmount: Number(row.overtime_amount || 0), totalAmount: Number(row.total_amount || 0),
-      sessions: Array.isArray(row.sessions) ? row.sessions as PayableSession[] : [],
+    const manualPending = runsData.filter((run) => run.status === "pending").flatMap((run) => (run.payment_run_items || []).map((item) => ({
+      key: `manual:${item.id}`, personId: item.person_id, personName: item.person_name, personKind: item.person_kind === "member" ? "member" as const : "employee" as const,
+      rate: Number(item.hourly_rate || 0), role: item.person_role || "employee", employmentStatus: ["full_time", "part_time", "contract", "internship"].includes(String(item.employment_status)) ? item.employment_status as PendingPayment["employmentStatus"] : "full_time",
+      regularMinutes: Number(item.regular_minutes || 0), overtimeMinutes: Number(item.overtime_minutes || 0), regularAmount: Number(item.regular_amount || 0), overtimeAmount: Number(item.overtime_amount || 0), totalAmount: Number(item.total_amount || 0),
+      sessions: [], paymentRunId: run.id, paymentRunItemId: item.id, isManualPayroll: true, paymentMethod: run.payment_method, payrollDate: run.run_date, paymentReference: item.payment_reference, note: item.note,
     })));
-    setRuns(runsData);
+    setPending(manualPending);
+    setRuns(runsData.filter((run) => run.status !== "pending"));
     if (profilesResult.error || membersResult.error) {
       setError("The payroll roster could not be fully loaded. Check that your account can read profiles and members.");
     }
@@ -140,6 +133,38 @@ export default function PayrollPage() {
   }
 
 
+
+  async function importPayrollFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !profile?.id) return;
+    const required = ["name", "role", "employment status", "regular hours", "overtime hours", "rate", "payment method", "payroll date"];
+    setImporting(true); setError("");
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const normalize = (value: string) => value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+      const headers = Object.keys(rows[0] || {}).map(normalize);
+      if (!rows.length || required.some((column) => !headers.includes(column))) throw new Error("There are some missing columns or columns mismatch. Kindly check and upload again");
+      const valueAt = (row: Record<string, unknown>, name: string) => { const key = Object.keys(row).find((header) => normalize(header) === name); return key ? row[key] : ""; };
+      const parsed = rows.map((row, index) => {
+        const name = String(valueAt(row, "name")).trim();
+        const person = payrollPeople.find((candidate) => (candidate.full_name || "").trim().toLowerCase() === name.toLowerCase());
+        const employmentStatus = String(valueAt(row, "employment status")).trim().toLowerCase().replace(/ /g, "_").replace("intern", "internship");
+        const method = String(valueAt(row, "payment method")).trim().toLowerCase().replace(/ /g, "_") as PaymentMethod;
+        const regularHours = Number(valueAt(row, "regular hours")); const overtimeHours = Number(valueAt(row, "overtime hours")); const rate = Number(valueAt(row, "rate"));
+        if (!person || !["full_time", "part_time", "contract", "internship"].includes(employmentStatus) || !["bank_transfer", "mobile_money", "cash", "other"].includes(method) || !Number.isFinite(regularHours) || !Number.isFinite(overtimeHours) || !Number.isFinite(rate) || !String(valueAt(row, "payroll date")).trim()) throw new Error("Row " + (index + 2) + " has invalid payroll data. Check the staff name, status, hours, rate, method, and date.");
+        const regularAmount = regularHours * rate; const overtimeAmount = overtimeHours * rate * OVERTIME_MULTIPLIER;
+        return { person, name, role: String(valueAt(row, "role")).trim(), employmentStatus, regularHours, overtimeHours, rate, method, payrollDate: String(valueAt(row, "payroll date")).trim(), reference: String(valueAt(row, "reference") || "").trim(), note: String(valueAt(row, "note") || "").trim(), total: Number((regularAmount + overtimeAmount).toFixed(2)), regularAmount: Number(regularAmount.toFixed(2)), overtimeAmount: Number(overtimeAmount.toFixed(2)) };
+      });
+      const { data: newRuns, error: runsError } = await supabase.from("payment_runs").insert(parsed.map((row) => ({ run_date: row.payrollDate, payment_method: row.method, status: "pending", total_amount: row.total, created_by: profile.id }))).select("id");
+      if (runsError || !newRuns || newRuns.length !== parsed.length) throw runsError || new Error("Unable to create uploaded payrolls.");
+      const { error: itemsError } = await supabase.from("payment_run_items").insert(parsed.map((row, index) => ({ payment_run_id: newRuns[index].id, person_kind: row.person.kind, person_id: row.person.id, person_name: row.person.full_name || row.name, person_role: row.role, employment_status: row.employmentStatus, hourly_rate: row.rate, regular_minutes: Math.round(row.regularHours * 60), overtime_minutes: Math.round(row.overtimeHours * 60), overtime_multiplier: OVERTIME_MULTIPLIER, regular_amount: row.regularAmount, overtime_amount: row.overtimeAmount, total_amount: row.total, payment_reference: row.reference || null, note: row.note || null })));
+      if (itemsError) throw itemsError;
+      setSuccess(String(parsed.length) + " payroll " + (parsed.length === 1 ? "entry" : "entries") + " uploaded to Pending Payments."); await loadPayroll();
+    } catch (uploadError) { setError((uploadError as Error).message || "Unable to upload payroll file."); }
+    finally { setImporting(false); event.target.value = ""; }
+  }
 
   async function deletePayroll(runId: string) {
     setDeleting(true); setError("");
@@ -186,6 +211,39 @@ export default function PayrollPage() {
     finally { setDismissing(false); }
   }
 
+  async function updateManualPendingPayroll(item: PendingPayment, values: PayrollFormValues) {
+    if (!item.paymentRunId || !item.paymentRunItemId) return;
+    const regularAmount = Number((values.regularHours * values.normalRate).toFixed(2));
+    const overtimeAmount = Number((values.overtimeHours * values.overtimeBaseRate * OVERTIME_MULTIPLIER).toFixed(2));
+    const totalAmount = Number((regularAmount + overtimeAmount).toFixed(2));
+    setSaving(true); setError("");
+    try {
+      const { error: runError } = await supabase.from("payment_runs").update({ run_date: runDate, payment_method: method, total_amount: totalAmount }).eq("id", item.paymentRunId);
+      if (runError) throw runError;
+      const { error: itemError } = await supabase.from("payment_run_items").update({ person_role: values.role, employment_status: values.employmentStatus, hourly_rate: values.normalRate, regular_minutes: Math.round(values.regularHours * 60), overtime_minutes: Math.round(values.overtimeHours * 60), regular_amount: regularAmount, overtime_amount: overtimeAmount, total_amount: totalAmount, payment_reference: reference || null, note: values.note || null }).eq("id", item.paymentRunItemId);
+      if (itemError) throw itemError;
+      setSuccess("Pending payroll updated."); await loadPayroll();
+    } catch (updateError) { setError(payrollSchemaHelp((updateError as Error).message || "Unable to update pending payroll.")); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteManualPendingPayroll(item: PendingPayment) {
+    if (!item.paymentRunId || !window.confirm(`Delete pending payroll for ?`)) return;
+    await deletePayroll(item.paymentRunId);
+  }
+
+  async function markPendingPayrollPaid(item: PendingPayment) {
+    if (!item.paymentRunId) return;
+    setSaving(true); setError("");
+    try {
+      const { error: updateError } = await supabase.from("payment_runs").update({ status: "completed" }).eq("id", item.paymentRunId);
+      if (updateError) throw updateError;
+      setSuccess(` marked as paid and moved to Payment History.`);
+      await loadPayroll();
+    } catch (paidError) { setError(payrollSchemaHelp((paidError as Error).message || "Unable to mark payroll as paid.")); }
+    finally { setSaving(false); }
+  }
+
   async function markAsPaid(values?: PayrollFormValues) {
     if (!profile?.id || (!selected.length && !values)) { setError("Select a staff member before adding payroll."); return; }
     const payable = values
@@ -210,7 +268,7 @@ export default function PayrollPage() {
     if (!payable.length) { setError("Choose a staff member from the payroll form."); return; }
     setSaving(true); setError("");
     try {
-      const { data: run, error: runError } = await supabase.from("payment_runs").insert({ run_date: runDate, payment_method: method, total_amount: payrollTotal, created_by: profile.id }).select().single();
+      const { data: run, error: runError } = await supabase.from("payment_runs").insert({ run_date: runDate, payment_method: method, status: "pending", total_amount: payrollTotal, created_by: profile.id }).select().single();
       if (runError || !run) throw runError || new Error("Could not create payment run.");
 
       let itemRows: { id: string; person_kind: string; person_id: string }[] | null = null;
@@ -273,7 +331,7 @@ export default function PayrollPage() {
       const entryIds = payable.flatMap((item) => item.sessions.filter((session) => session.source === "member").map((session) => session.entryId).filter(Boolean));
       if (punchIds.length) { const { error: punchError } = await supabase.from("punches").update({ payment_run_id: run.id, paid_at: new Date().toISOString() }).in("id", punchIds); if (punchError) throw punchError; }
       if (entryIds.length) { const { error: entryError } = await supabase.from("member_entries").update({ payment_run_id: run.id, paid_at: new Date().toISOString() }).in("id", entryIds); if (entryError) throw entryError; }
-      setSuccess(`${payable.length} payroll ${payable.length === 1 ? "entry" : "entries"} added and marked as paid.`); resetFlow(); await loadPayroll();
+      setSuccess(`${payable.length} payroll ${payable.length === 1 ? "entry" : "entries"} added to Pending Payments.`); resetFlow(); await loadPayroll();
     } catch (paymentError) { setError(payrollSchemaHelp((paymentError as Error).message || "Unable to record payment.")); }
     finally { setSaving(false); }
   }
@@ -282,17 +340,17 @@ export default function PayrollPage() {
     <div className="flex flex-wrap items-end justify-between gap-4 animate-fade-up"><div><div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary"><WalletCards className="h-3.5 w-3.5" /> Activity</div><h2 className="mt-3 font-display text-2xl font-bold text-ink">Payroll</h2><p className="mt-1 text-sm text-ink-muted">Calculate unpaid completed time, then log manually completed payments.</p></div><div className="rounded-xl border border-border bg-card-bg px-4 py-3 text-right"><p className="text-xs text-ink-muted">Pending payments</p><p className="font-display text-xl font-bold text-ink">{pending.length}</p></div></div>
     {error && <div className="flex gap-2 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
     {success && <div className="flex gap-2 rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-success"><CheckCircle2 className="h-4 w-4 shrink-0" />{success}</div>}
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border"><div className="flex gap-5"><button type="button" onClick={() => setTab("pending")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "pending" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Pending payments</button><button type="button" onClick={() => setTab("history")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "history" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Payment history</button></div><button type="button" onClick={startPayroll} className="btn-primary mb-2 text-sm"><Plus className="h-4 w-4" />Add payroll</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border"><div className="flex gap-5"><button type="button" onClick={() => setTab("pending")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "pending" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Pending payments</button><button type="button" onClick={() => setTab("history")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "history" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Payment history</button></div><div className="mb-2 flex items-center gap-2"><input ref={payrollFileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(event) => void importPayrollFile(event)} /><button type="button" className="btn-secondary text-sm" disabled={importing} onClick={() => payrollFileRef.current?.click()}>{importing ? "Uploading…" : "Upload payroll"}</button><button type="button" onClick={startPayroll} className="btn-primary text-sm"><Plus className="h-4 w-4" />Add payroll</button></div></div>
     {tab === "pending" ? (
       <>
         <div className="card flex flex-col gap-3 p-4 sm:flex-row"><div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input className="input pl-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search staff, role, or employment status…" /></div></div>
-        <div className="card overflow-x-auto"><div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3"><div><h3 className="font-display font-semibold text-ink">Staff with pending payments</h3><p className="mt-0.5 text-xs text-ink-muted">Completed unpaid attendance is ready to be added to payroll.</p></div><span className="badge badge-yellow">{filtered.length} pending</span></div><table className="w-full min-w-[1240px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Staff</th><th className="table-header px-3 py-3 text-left">Role</th><th className="table-header px-3 py-3 text-left">Employment status</th><th className="table-header px-3 py-3 text-left">Sessions</th><th className="table-header px-3 py-3 text-left">Regular hours</th><th className="table-header px-3 py-3 text-left">Overtime · 2.0x</th><th className="table-header px-3 py-3 text-left">Payment status</th><th className="table-header px-3 py-3 text-left">Rate</th><th className="table-header px-3 py-3 text-right">Amount due</th><th className="table-header px-3 py-3 text-center w-12"></th></tr></thead><tbody>{loading ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">Loading unpaid completed attendance…</td></tr> : filtered.length === 0 ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">No unpaid completed attendance is ready for payment.</td></tr> : filtered.map((item) => <tr key={item.key} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3"><div className="flex items-center gap-3"><InitialsAvatar name={item.personName} src={item.avatarUrl} size="sm" /><div><p className="font-medium text-ink">{item.personName}</p><p className="text-xs capitalize text-ink-muted">{item.personKind}</p></div></div></td><td className="px-3 py-3 capitalize text-ink-muted">{item.role}</td><td className="px-3 py-3 capitalize text-ink-muted">{item.employmentStatus.replace("_", " ")}</td><td className="px-3 py-3 text-ink-muted">{item.sessions.length}</td><td className="px-3 py-3 text-ink-muted">{duration(item.regularMinutes)}</td><td className="px-3 py-3 text-warn">{duration(item.overtimeMinutes)}</td><td className="px-3 py-3"><span className="badge badge-yellow">Pending</span></td><td className="px-3 py-3 text-ink-muted">{money.format(item.rate)}/hr</td><td className="px-3 py-3 text-right font-semibold text-ink">{money.format(item.totalAmount)}</td><td className="px-3 py-3 text-center"><PendingActionMenu item={item} isOpen={openMenuId === `pending:${item.key}`} onToggle={() => setOpenMenuId(openMenuId === `pending:${item.key}` ? null : `pending:${item.key}`)} onEdit={() => { setOpenMenuId(null); setEditingPending(item); }} onDelete={() => { setOpenMenuId(null); setDismissingPending(item); }} /></td></tr>)}</tbody></table></div>
+        <div className="card overflow-x-auto"><div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3"><div><h3 className="font-display font-semibold text-ink">Staff with pending payments</h3><p className="mt-0.5 text-xs text-ink-muted">Completed unpaid attendance is ready to be added to payroll.</p></div><span className="badge badge-yellow">{filtered.length} pending</span></div><table className="w-full min-w-[1240px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Staff</th><th className="table-header px-3 py-3 text-left">Role</th><th className="table-header px-3 py-3 text-left">Employment status</th><th className="table-header px-3 py-3 text-left">Sessions</th><th className="table-header px-3 py-3 text-left">Regular hours</th><th className="table-header px-3 py-3 text-left">Overtime · 2.0x</th><th className="table-header px-3 py-3 text-left">Payment status</th><th className="table-header px-3 py-3 text-left">Rate</th><th className="table-header px-3 py-3 text-right">Amount due</th><th className="table-header px-3 py-3 text-center w-12"></th></tr></thead><tbody>{loading ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">Loading unpaid completed attendance…</td></tr> : filtered.length === 0 ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">No unpaid completed attendance is ready for payment.</td></tr> : filtered.map((item) => <tr key={item.key} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3"><div className="flex items-center gap-3"><InitialsAvatar name={item.personName} src={item.avatarUrl} size="sm" /><div><p className="font-medium text-ink">{item.personName}</p><p className="text-xs capitalize text-ink-muted">{item.personKind}</p></div></div></td><td className="px-3 py-3 capitalize text-ink-muted">{item.role}</td><td className="px-3 py-3 capitalize text-ink-muted">{item.employmentStatus.replace("_", " ")}</td><td className="px-3 py-3 text-ink-muted">{item.sessions.length}</td><td className="px-3 py-3 text-ink-muted">{duration(item.regularMinutes)}</td><td className="px-3 py-3 text-warn">{duration(item.overtimeMinutes)}</td><td className="px-3 py-3"><span className="badge badge-yellow">Pending</span></td><td className="px-3 py-3 text-ink-muted">{money.format(item.rate)}/hr</td><td className="px-3 py-3 text-right font-semibold text-ink">{money.format(item.totalAmount)}</td><td className="px-3 py-3 text-center"><PendingActionMenu item={item} isOpen={openMenuId === `pending:${item.key}`} onToggle={() => setOpenMenuId(openMenuId === `pending:${item.key}` ? null : `pending:${item.key}`)} onEdit={() => { setOpenMenuId(null); setMethod(item.paymentMethod || method); setRunDate(item.payrollDate || runDate); setReference(item.paymentReference || ""); setEditingPending(item); }} onDelete={() => { setOpenMenuId(null); if (item.isManualPayroll) { void deleteManualPendingPayroll(item); } else { setDismissingPending(item); } }} onPaid={() => { setOpenMenuId(null); if (item.isManualPayroll) void markPendingPayrollPaid(item); }} /></td></tr>)}</tbody></table></div>
       </>
     ) : (
       <div className="card overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Run date</th><th className="table-header px-5 py-3 text-left">Payment method</th><th className="table-header px-5 py-3 text-left">People paid</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right">Total</th><th className="table-header px-3 py-3 text-center w-12">Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">Loading payment history…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">No payments have been logged yet.</td></tr> : runs.map((run) => <tr key={run.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 text-ink">{format(parseISO(run.run_date), "MMM d, yyyy")}</td><td className="px-5 py-3 capitalize text-ink-muted">{run.payment_method.replace("_", " ")}</td><td className="px-5 py-3 text-ink-muted">{run.payment_run_items?.length || 0}</td><td className="px-5 py-3"><span className={"badge " + (run.status === "completed" ? "badge-green" : "badge-red")}>{run.status}</span></td><td className="px-5 py-3 text-right font-semibold text-ink">{money.format(Number(run.total_amount || 0))}</td><td className="px-3 py-3 text-center"><button type="button" onClick={() => setDeletingRun(run)} className="rounded-lg p-1.5 text-danger transition-colors hover:bg-danger/10" title="Delete payroll entry"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
     )}
     {deletingRun && <DeleteConfirmDialog run={deletingRun} deleting={deleting} onCancel={() => setDeletingRun(null)} onConfirm={() => void deletePayroll(deletingRun.id)} />}
-    {editingPending && <EditPendingDialog item={editingPending} people={payrollPeople} pending={pending} method={method} reference={reference} runDate={runDate} saving={saving} onMethodChange={setMethod} onReferenceChange={setReference} onRunDateChange={setRunDate} onCancel={() => setEditingPending(null)} onSelect={(key: string) => setSelectedKeys(key ? [key] : [])} onSubmit={(values: PayrollFormValues) => { setEditingPending(null); void markAsPaid(values); }} />}
+    {editingPending && <EditPendingDialog item={editingPending} people={payrollPeople} pending={pending} method={method} reference={reference} runDate={runDate} saving={saving} onMethodChange={setMethod} onReferenceChange={setReference} onRunDateChange={setRunDate} onCancel={() => setEditingPending(null)} onSelect={(key: string) => setSelectedKeys(key ? [key] : [])} onSubmit={(values: PayrollFormValues) => { const current = editingPending; setEditingPending(null); if (current?.isManualPayroll) { void updateManualPendingPayroll(current, values); } else { void markAsPaid(values); } }} />}
     {dismissingPending && <DismissPendingConfirmDialog item={dismissingPending} dismissing={dismissing} onCancel={() => setDismissingPending(null)} onConfirm={() => void dismissPendingPayment(dismissingPending)} />}
     {step > 0 && <PayrollEntryDialog people={payrollPeople} pending={pending} method={method} reference={reference} runDate={runDate} saving={saving} onMethodChange={setMethod} onReferenceChange={setReference} onRunDateChange={setRunDate} onCancel={resetFlow} onSelect={(key) => setSelectedKeys(key ? [key] : [])} onSubmit={(values) => void markAsPaid(values)} />}
   </div>;
@@ -322,8 +380,8 @@ function PayrollEntryDialog({ people, pending, method, reference, runDate, savin
     const person = people.find((entry) => `${entry.kind}:${entry.id}` === key);
     if (!item) {
       setRole(person?.role || "employee");
-      setEmploymentStatus("full_time");
-      setRegularHours(0); setOvertimeHours(0); setNormalRate(0); setOvertimeBaseRate(0);
+      setEmploymentStatus((person?.employment_type === "intern" ? "internship" : person?.employment_type || "full_time") as PendingPayment["employmentStatus"]);
+      setRegularHours(0); setOvertimeHours(0); setNormalRate(Number(person?.hourly_rate || 0)); setOvertimeBaseRate(Number(person?.hourly_rate || 0));
       return;
     }
     setRole(item.role); setEmploymentStatus(item.employmentStatus);
@@ -415,12 +473,14 @@ function PendingActionMenu({
   onToggle,
   onEdit,
   onDelete,
+  onPaid,
 }: {
   item: PendingPayment;
   isOpen: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onPaid: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -452,6 +512,7 @@ function PendingActionMenu({
             <Pencil className="h-3.5 w-3.5 text-ink-muted" />
             Edit
           </button>
+          <button type="button" onClick={onPaid} className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-success hover:bg-success/10 transition-colors"><CheckCircle2 className="h-3.5 w-3.5" />Paid</button>
           <button
             type="button"
             onClick={onDelete}
@@ -505,7 +566,7 @@ function EditPendingDialog({
   const [overtimeHours, setOvertimeHours] = useState(Number((item.overtimeMinutes / 60).toFixed(2)));
   const [normalRate, setNormalRate] = useState(item.rate);
   const [overtimeBaseRate, setOvertimeBaseRate] = useState(item.rate);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(item.note || "");
 
   const selectedPerson = people.find((person) => `${person.kind}:${person.id}` === activeKey) || {
     id: item.personId,
