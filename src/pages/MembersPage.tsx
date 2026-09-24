@@ -30,6 +30,7 @@ type MemberFormState = {
   employment_type: string;
   start_date: string;
   employee_id: string;
+  hourly_rate: number;
   emergency_contact_name: string;
   emergency_contact_phone: string;
   notes: string;
@@ -51,7 +52,8 @@ const EMPTY_FORM: MemberFormState = {
   full_name: "", role: "employee", company_name: "", email: "",
   department: "", avatar_url: "", phone: "", address: "",
   date_of_birth: "", gender: "", employment_type: "full_time",
-  start_date: "", employee_id: "", emergency_contact_name: "",
+  start_date: "", employee_id: "", hourly_rate: 0,
+  emergency_contact_name: "",
   emergency_contact_phone: "", notes: "",
   face_reference: null, faceEnrollment: null,
 };
@@ -229,6 +231,21 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
           </select>
         </div>
         <div>
+          <label className="label">Hourly Rate</label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted text-sm font-medium">GHS</span>
+            <input
+              type="number"
+              className="input pl-12"
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+              value={form.hourly_rate || ""}
+              onChange={(e) => setForm((current) => ({ ...current, hourly_rate: parseFloat(e.target.value) || 0 }))}
+            />
+          </div>
+        </div>
+        <div>
           <label className="label">Start Date</label>
           <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
         </div>
@@ -401,7 +418,7 @@ function CSVImportModal({ onClose, onImport }: CSVImportModalProps) {
                             <td className="px-3 py-2 text-ink-muted">{r.email}</td>
                             <td className="px-3 py-2 text-ink-muted capitalize">{r.role || "employee"}</td>
                             <td className="px-3 py-2 text-ink-muted">{r.department || "—"}</td>
-                            <td className="px-3 py-2 text-ink-muted">${r.hourly_rate || 0}/hr</td>
+                            <td className="px-3 py-2 text-ink-muted">GHS {r.hourly_rate || 0}/hr</td>
                             <td className="px-3 py-2 text-ink-muted">{r.employment_type || "full_time"}</td>
                           </tr>
                         ))}
@@ -494,6 +511,7 @@ export default function MembersPage() {
       employment_type: form.employment_type || "full_time",
       start_date: form.start_date || null,
       employee_id: form.employee_id || null,
+      hourly_rate: form.hourly_rate || 0,
       emergency_contact_name: form.emergency_contact_name || null,
       emergency_contact_phone: form.emergency_contact_phone || null,
       notes: form.notes || null,
@@ -736,7 +754,7 @@ export default function MembersPage() {
                         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-ink-muted">
                           <span>Department: {m.department || "—"}</span>
                           <span>Type: {m.employment_type?.replace("_", " ") || "—"}</span>
-                          <span>Rate: ${m.hourly_rate || 0}/hr</span>
+                          <span>Rate: GHS {m.hourly_rate || 0}/hr</span>
                           <span>Face ID: {m.face_reference || m.face_enrolled ? "Enrolled" : "None"}</span>
                           {m.employee_id && <span>ID: {m.employee_id}</span>}
                           {m.phone && <span>Phone: {m.phone}</span>}

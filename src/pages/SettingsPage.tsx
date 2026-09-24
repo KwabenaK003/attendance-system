@@ -559,7 +559,7 @@ export default function SettingsPage() {
                 {DEPARTMENT_OPTIONS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
               </select>
             </Field>
-            <Field label="Hourly Rate ($)"><input type="number" className="input" value={accountForm.hourly_rate} onChange={setAccountField("hourly_rate")} placeholder="0" /></Field>
+            <Field label="Hourly Rate (GHS)"><input type="number" className="input" value={accountForm.hourly_rate} onChange={setAccountField("hourly_rate")} placeholder="0" /></Field>
             <Field label="Profile Photo"><AvatarUpload name={accountForm.full_name} value={accountForm.avatar_url} onChange={(avatar_url) => setAccountForm((current) => ({ ...current, avatar_url }))} /></Field>
           </div>
 

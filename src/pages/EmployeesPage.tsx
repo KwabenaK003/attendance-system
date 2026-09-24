@@ -189,13 +189,13 @@ export default function EmployeesPage() {
                       {/* Hourly rate */}
                       <td className="px-5 py-3">
                         {isAdmin ? (
-                          <div className="relative w-24">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs">
-                              $
+                          <div className="relative w-28">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-medium">
+                              GHS
                             </span>
                             <input
                               type="number"
-                              className="bg-slate-800 border border-slate-700 rounded-lg pl-6 pr-2 py-1 text-xs text-white focus:outline-none focus:border-accent/50 w-full"
+                              className="bg-slate-800 border border-slate-700 rounded-lg pl-11 pr-2 py-1 text-xs text-white focus:outline-none focus:border-accent/50 w-full"
                               defaultValue={emp.hourly_rate ?? ""}
                               onBlur={(e: React.FocusEvent<HTMLInputElement>) =>   // line 124 fix
                                 void updateRate(emp.id, e.target.value)
@@ -203,7 +203,7 @@ export default function EmployeesPage() {
                             />
                           </div>
                         ) : (
-                          <span className="text-slate-400">${emp.hourly_rate ?? 0}/hr</span>
+                          <span className="text-slate-400">GHS {emp.hourly_rate ?? 0}/hr</span>
                         )}
                       </td>
                     </tr>
