@@ -38,7 +38,7 @@ export default function InitialsAvatar({ name, src, size = "md", className = "" 
 
   return (
     <div
-      className={`flex flex-shrink-0 items-center justify-center border font-display font-bold ${sizeClass} ${paletteForName(name)} ${className}`}
+      className={`relative overflow-hidden flex flex-shrink-0 items-center justify-center border font-display font-bold ${sizeClass} ${paletteForName(name)} ${className}`}
       aria-label={name ? `${name} avatar` : "Person avatar"}
       title={name || "Unknown person"}
     >
