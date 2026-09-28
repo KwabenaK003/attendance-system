@@ -457,3 +457,14 @@ table tbody tr:hover { background-color: rgba(112, 71, 235, 0.035); }
 /* Flat interface: keep elevation out of cards, controls, menus, and overlays. */
 *, *::before, *::after { box-shadow: none !important; }
 [class*="border-primary/"], [class*="border-accent/"], [class*="border-danger/"], [class*="border-warn/"], [class*="border-success/"], [class*="border-info/"] { border-color: var(--color-border) !important; }
+
+/* Keep page titles as the only bold text in the interface. */
+.font-bold:not(.page-title) { font-weight: 500 !important; }
+.page-title { font-weight: 700 !important; }
+.badge, .badge-green, .badge-red, .badge-yellow, .badge-blue {
+  font-weight: 500 !important;
+}
+.card :is(h1, h2, h3, h4),
+.card-glow :is(h1, h2, h3, h4) {
+  font-weight: 500 !important;
+}
