@@ -3,21 +3,21 @@ const config = {
   theme: {
     extend: {
       fontFamily: {
-        display: ["'Syne'", "sans-serif"],
-        body: ["'DM Sans'", "sans-serif"],
+        display: ["'Clash Grotesk'", "system-ui", "sans-serif"],
+        body: ["'Clash Grotesk'", "system-ui", "sans-serif"],
         mono: ["'JetBrains Mono'", "monospace"],
       },
       colors: {
         // New palette
-        "page-bg": "#F4F7FC",
-        "card-bg": "#fafafa",
-        sidebar: "#07091f",
-        "sidebar-text": "#fafafa",
-        primary: "#2563eb",
-        "primary-hover": "#1d4ed8",
-        ink: "#080402",
-        "ink-muted": "#08040299",
-        border: "#E2E8F0",
+        "page-bg": "#f6f7f5",
+        "card-bg": "#ffffff",
+        sidebar: "#7047EB",
+        "sidebar-text": "#e8f0f3",
+        primary: "#7047EB",
+        "primary-hover": "#5B35D5",
+        ink: "#17212b",
+        "ink-muted": "#5e6b75",
+        border: "#dce3e5",
 
         slate: {
           950: "#0a0f1e",
@@ -26,24 +26,25 @@ const config = {
           700: "#334155",
         },
         accent: {
-          DEFAULT: "#2563eb",
-          dim: "#1d4ed8",
-          glow: "rgba(37,99,235,0.15)",
+        DEFAULT: "#7047EB",
+        dim: "#5B35D5",
+        glow: "rgba(112,71,235,0.12)",
         },
-        danger: "#ff4d6d",
-        warn: "#fbbf24",
-        info: "#2563eb",
+      success: "#18794e",
+      danger: "#b4233a",
+      warn: "#a85d00",
+      info: "#245db2",
       },
       backgroundImage: {
         "grid-pattern":
-          "linear-gradient(rgba(37,99,235,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.03) 1px, transparent 1px)",
+          "linear-gradient(rgba(112,71,235,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(112,71,235,0.025) 1px, transparent 1px)",
       },
       backgroundSize: {
         grid: "40px 40px",
       },
       boxShadow: {
-        glow: "0 0 20px rgba(37,99,235,0.2)",
-        "glow-lg": "0 0 40px rgba(37,99,235,0.3)",
+        glow: "none",
+        "glow-lg": "none",
       },
       animation: {
         "pulse-slow": "pulse 3s ease-in-out infinite",

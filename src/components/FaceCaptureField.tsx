@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, CheckCircle, RefreshCcw, Trash2, AlertCircle } from "lucide-react";
+import { Camera, CheckCircle, RefreshCcw, Trash2, AlertCircle } from "./solar";
 import {
   captureVideoFrame,
   createFaceReference,

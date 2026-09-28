@@ -1,3 +1,4 @@
+import CustomSelect from "../components/CustomSelect";
 import { clockOutDisplayInfo, isExpiredSession } from "../lib/dailyClockReset";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -22,8 +23,9 @@ import {
   StickyNote,
   UserRound,
   Wifi,
-} from "lucide-react";
+} from "../components/solar";
 import { useAuth } from "../context/AuthContext";
+import PageHeader from "../components/PageHeader";
 import { supabase } from "../lib/supabase";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { hasManagementAccess } from "../lib/workforce";
@@ -171,9 +173,9 @@ function AttendanceLogDetailPage({
   recordId,
 }: AttendanceLogDetailPageProps) {
   const navigate = useNavigate();
-  const [detail, setDetail]   = useState<SessionDetail | null>(null);
+  const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError]     = useState<string>("");
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     void fetchDetail();
@@ -263,7 +265,7 @@ function AttendanceLogDetailPage({
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
             Log Detail
           </div>
-          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Attendance Details</h2>
+          <h2 className="mt-3 font-display text-xl font-semibold text-ink">Attendance Details</h2>
           <p className="mt-1 text-sm text-ink-muted">
             Full person, clock, capture, and notes record.
           </p>
@@ -311,7 +313,7 @@ function AttendanceLogDetailPage({
               label="Person"
               value={detail.personName ?? detail.person?.full_name}
             />
-            <DetailField label="Type"     value={detail.personType} />
+            <DetailField label="Type" value={detail.personType} />
             <DetailField
               label="Date"
               value={
@@ -331,15 +333,15 @@ function AttendanceLogDetailPage({
                 detail.clockOut
                   ? format(parseISO(detail.clockOut), "HH:mm:ss")
                   : detail.note?.includes("did_not_clock_out")
-                  ? "Did not clock out"
-                  : "Active"
+                    ? "Did not clock out"
+                    : "Active"
               }
             />
           </div>
 
           {/* Captured metadata */}
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <CapturedDetailsCard title="Clock In Capture"  details={detail.capturedIn} />
+            <CapturedDetailsCard title="Clock In Capture" details={detail.capturedIn} />
             <CapturedDetailsCard title="Clock Out Capture" details={detail.capturedOut} />
           </div>
 
@@ -362,12 +364,12 @@ function AttendanceLogDetailPage({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TimesheetsPage() {
-  const { profile }               = useAuth();
-  const navigate                  = useNavigate();
-  const { source, recordId }      = useParams<{ source?: string; recordId?: string }>();
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { source, recordId } = useParams<{ source?: string; recordId?: string }>();
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
-  const [sessions, setSessions]   = useState<Session[]>([]);
-  const [loading, setLoading]     = useState<boolean>(true);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [showMonthPicker, setShowMonthPicker] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [personTypeFilter, setPersonTypeFilter] = useState("all");
@@ -382,19 +384,18 @@ export default function TimesheetsPage() {
     if (!profile?.id || source || recordId) return undefined;
 
     const channel = createAttendanceRealtimeChannel({
-      channelName: `timesheets-${profile.id}-${format(currentMonth, "yyyy-MM")}-${
-        isAdmin ? "management" : "self"
-      }`,
-      profileId:    profile.id,
+      channelName: `timesheets-${profile.id}-${format(currentMonth, "yyyy-MM")}-${isAdmin ? "management" : "self"
+        }`,
+      profileId: profile.id,
       isManagement: isAdmin,
-      onChange:     () => { void fetchTimesheets(); },
+      onChange: () => { void fetchTimesheets(); },
     });
 
     return () => { void supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, currentMonth, isAdmin, source, recordId]);
 
-  
+
 
   // Render detail page when route params are present
   if (source && recordId) {
@@ -408,23 +409,23 @@ export default function TimesheetsPage() {
     await supabase.rpc("close_expired_shift_sessions");
 
     const start = startOfMonth(currentMonth);
-    const end   = endOfMonth(currentMonth);
+    const end = endOfMonth(currentMonth);
 
     const [punchResult, profileResult, memberResult] = await Promise.all([
       isAdmin
         ? supabase
-            .from("punches")
-            .select("*")
-            .gte("timestamp", start.toISOString())
-            .lte("timestamp", end.toISOString())
-            .order("timestamp", { ascending: true })
+          .from("punches")
+          .select("*")
+          .gte("timestamp", start.toISOString())
+          .lte("timestamp", end.toISOString())
+          .order("timestamp", { ascending: true })
         : supabase
-            .from("punches")
-            .select("*")
-            .eq("user_id", profile.id)
-            .gte("timestamp", start.toISOString())
-            .lte("timestamp", end.toISOString())
-            .order("timestamp", { ascending: true }),
+          .from("punches")
+          .select("*")
+          .eq("user_id", profile.id)
+          .gte("timestamp", start.toISOString())
+          .lte("timestamp", end.toISOString())
+          .order("timestamp", { ascending: true }),
 
       isAdmin
         ? supabase.from("profiles").select("id, full_name")
@@ -432,16 +433,16 @@ export default function TimesheetsPage() {
 
       isAdmin
         ? supabase
-            .from("member_entries")
-            .select("*, members(full_name)")
-            .gte("punch_in", start.toISOString())
-            .lte("punch_in", end.toISOString())
-            .order("punch_in", { ascending: true })
+          .from("member_entries")
+          .select("*, members(full_name)")
+          .gte("punch_in", start.toISOString())
+          .lte("punch_in", end.toISOString())
+          .order("punch_in", { ascending: true })
         : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     ]);
 
-    const punchData    = punchResult.data;
-    const profileRows  = profileResult.data ?? [];
+    const punchData = punchResult.data;
+    const profileRows = profileResult.data ?? [];
     const memberEntries = memberResult.data ?? [];
 
     if (!punchData) { setLoading(false); return; }
@@ -504,8 +505,8 @@ export default function TimesheetsPage() {
       s.clockOut
         ? format(parseISO(s.clockOut), "HH:mm:ss")
         : s.note?.includes("did_not_clock_out") || isExpiredSession(s.clockIn)
-        ? "Did not clock out"
-        : "Active",
+          ? "Did not clock out"
+          : "Active",
       formatDuration(s.minutes),
       getCapturedDetailValue(s.capturedIn, "deviceName"),
       getCapturedDetailValue(s.capturedIn, "ipAddress"),
@@ -525,9 +526,9 @@ export default function TimesheetsPage() {
       .join("\n");
 
     const blob = new Blob([csv], { type: "text/csv" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `attendance-log-${format(currentMonth, "yyyy-MM")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
@@ -540,33 +541,19 @@ export default function TimesheetsPage() {
   });
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      {/* Page header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Timesheets
-          </div>
-          <h2 className="mt-3 font-display font-bold text-2xl text-ink">Attendance Log</h2>
-          <p className="text-ink-muted text-sm mt-1">
-            {isAdmin
-              ? "Staff and member clock activity with details one click away."
-              : "Your clock activity with details one click away."}
-          </p>
-        </div>
-        <button
-          onClick={exportCSV}
-          className="btn-secondary flex items-center gap-2 text-sm"
-        >
-          <Download className="w-4 h-4" /> Export CSV
-        </button>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader
+        eyebrow="Time & attendance"
+        title="Attendance log"
+        description={isAdmin ? "Review staff and member clock activity, then open a record for details." : "Review your clock activity and open a record for details."}
+        actions={<button onClick={exportCSV} className="btn-secondary flex items-center gap-2 text-sm"><Download className="h-4 w-4" />Export CSV</button>}
+      />
 
       {/* Month navigator */}
-      <div className="relative flex items-center justify-between card-glow px-5 py-3 animate-fade-up overflow-visible">
+      <div className="relative flex items-center justify-between overflow-visible rounded-2xl border border-border bg-card-bg px-4 py-3">
         <button
           onClick={() => setCurrentMonth((m) => subMonths(m, 1))}
-          className="text-ink-muted hover:text-ink transition-colors"
+          className="btn-secondary h-10 w-10 justify-center p-0"
           aria-label="Previous month"
         >
           <ChevronLeft className="w-5 h-5" />
@@ -575,7 +562,7 @@ export default function TimesheetsPage() {
         <button
           type="button"
           onClick={() => setShowMonthPicker((cur) => !cur)}
-          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 font-display text-lg font-semibold text-ink transition-colors hover:bg-page-bg"
+          className="inline-flex min-h-10 items-center gap-2 rounded-xl px-4 py-2 font-display text-lg font-semibold text-ink transition-colors hover:bg-page-bg"
         >
           <CalendarDays className="h-4 w-4 text-accent" />
           {format(currentMonth, "MMMM yyyy")}
@@ -583,7 +570,7 @@ export default function TimesheetsPage() {
 
         <button
           onClick={() => setCurrentMonth((m) => addMonths(m, 1))}
-          className="text-ink-muted hover:text-ink transition-colors"
+          className="btn-secondary h-10 w-10 justify-center p-0"
           aria-label="Next month"
         >
           <ChevronRight className="w-5 h-5" />
@@ -592,14 +579,14 @@ export default function TimesheetsPage() {
       </div>
 
       {showMonthPicker && (
-        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-24">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMonthPicker(false)} />
-          <div className="relative w-80 rounded-2xl border border-border bg-card-bg p-4 shadow-2xl shadow-black/10">
-            <p className="label">Select Month &amp; Year</p>
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-24" role="presentation">
+          <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close month picker" onClick={() => setShowMonthPicker(false)} />
+          <div role="dialog" aria-modal="true" aria-labelledby="month-picker-title" className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card-bg p-5 ">
+            <h3 id="month-picker-title" className="mb-4 font-display text-lg font-semibold text-ink">Select month &amp; year</h3>
             <div className="grid gap-3">
               <div>
                 <label className="label">Month</label>
-                <select
+                <CustomSelect
                   className="input w-full"
                   value={currentMonth.getMonth()}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -624,12 +611,12 @@ export default function TimesheetsPage() {
                   ].map((monthName, index) => (
                     <option key={monthName} value={index}>{monthName}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </div>
 
               <div>
                 <label className="label">Year</label>
-                <select
+                <CustomSelect
                   className="input w-full"
                   value={currentMonth.getFullYear()}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -644,7 +631,7 @@ export default function TimesheetsPage() {
                       <option key={year} value={year}>{year}</option>
                     );
                   })}
-                </select>
+                </CustomSelect>
               </div>
             </div>
 
@@ -656,9 +643,10 @@ export default function TimesheetsPage() {
         </div>
       )}
 
-      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
-        <input className="input flex-1" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search person or attendance type…" />
-        <select className="input sm:w-40" value={personTypeFilter} onChange={(event) => setPersonTypeFilter(event.target.value)}><option value="all">All people</option><option value="employee">Employees</option><option value="member">Members</option></select>
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1"><span className="label">Search records</span><input type="search" className="input" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by person or record type" /></label>
+        <label className="sm:w-48"><span className="label">Person type</span><CustomSelect className="input" value={personTypeFilter} onChange={(event) => setPersonTypeFilter(event.target.value)}><option value="all">All people</option><option value="employee">Employees</option><option value="member">Members</option></CustomSelect></label>
+
       </div>
 
       {/* Sessions table */}
@@ -672,47 +660,35 @@ export default function TimesheetsPage() {
                 <th className="table-header px-5 py-3 text-left">Date</th>
                 <th className="table-header px-5 py-3 text-left">Clock In</th>
                 <th className="table-header px-5 py-3 text-left">Clock Out</th>
+                <th className="table-header px-5 py-3 text-right">Record</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-ink-muted">
+                  <td colSpan={6} className="text-center py-12 text-ink-muted">
                     Loading…
                   </td>
                 </tr>
               ) : visibleSessions.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-12">
+                  <td colSpan={6} className="text-center py-12">
                     <Clock className="w-8 h-8 text-slate-700 mx-auto mb-2" />
                     <p className="text-ink-muted">{sessions.length ? "No attendance records match your filters" : "No time records for this month"}</p>
                   </td>
                 </tr>
               ) : (
                 visibleSessions.map((s) => (
-                  <tr
-                    key={`${s.source}-${s.id}`}
-                    className="border-b border-border/60 transition-colors hover:bg-page-bg cursor-pointer focus-within:bg-page-bg"
-                    onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        navigate(`/timesheets/${s.source}/${s.id}`);
-                      }
-                    }}
-                    tabIndex={0}
-                    role="link"
-                    aria-label={`Open details for ${s.personName ?? "Employee"}`}
-                  >
+                  <tr key={`${s.source}-${s.id}`} className="border-b border-border/60">
                     {/* Person */}
-                    <td className="px-5 py-3 font-medium text-ink">
+                    <th scope="row" className="px-5 py-3 text-left font-medium text-ink">
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-accent/15 bg-accent/10 text-accent">
                           <UserRound className="h-4 w-4" />
                         </div>
                         <span>{s.personName ?? "Employee"}</span>
                       </div>
-                    </td>
+                    </th>
 
                     {/* Type */}
                     <td className="px-5 py-3 text-ink-muted text-xs">{s.personType}</td>
@@ -725,6 +701,11 @@ export default function TimesheetsPage() {
                     {/* Clock In */}
                     <td className="px-5 py-3 font-mono text-ink-muted">
                       {format(parseISO(s.clockIn), "HH:mm")}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => navigate(`/timesheets/${s.source}/${s.id}`)} aria-label={`View ${s.personName ?? "employee"} attendance details`}>
+                        View details
+                      </button>
                     </td>
 
                     {/* Clock Out + detail button */}

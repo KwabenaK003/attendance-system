@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import PageHeader from "../components/PageHeader";
 import { differenceInMinutes, differenceInSeconds, format, parseISO } from "date-fns";
 import {
   Clock, Copy, CheckCircle, XCircle, AlertCircle,
   Loader2, Camera, ScanFace, Search, UserRound, Maximize2, Minimize2, History,
-} from "lucide-react";
+} from "../components/solar";
 import { useAuth } from "../context/AuthContext";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { supabase } from "../lib/supabase";
@@ -183,14 +184,13 @@ function SearchResultButton({ person, onSelect }: SearchResultButtonProps) {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-white font-medium truncate">{person.full_name ?? "Unknown"}</p>
             <span
-              className={`badge text-[10px] uppercase tracking-wide ${
-                person.kind === "member" ? "badge-yellow" : "badge-blue"
-              }`}
+              className={`badge text-[10px] uppercase tracking-wide ${person.kind === "member" ? "badge-yellow" : "badge-blue"
+                }`}
             >
               {person.kind === "member" ? "Member" : "Employee"}
             </span>
           </div>
-      <p className="text-ink-muted text-xs">
+          <p className="text-ink-muted text-xs">
             {getRoleLabel(person.role)}
             {person.department ? ` • ${person.department}` : ""}
           </p>
@@ -259,9 +259,9 @@ function buildPunchNote({
   if (person.role) parts.push(`Role: ${getRoleLabel(person.role)}`);
   if (typeof similarity === "number") parts.push(`Face match: ${Math.round(similarity * 100)}%`);
   if (locationName) parts.push(`Location: ${locationName}`);
-  if (deviceName)   parts.push(`Device: ${deviceName}`);
-  if (networkName)  parts.push(`Network: ${networkName}`);
-  if (ipAddress)    parts.push(`IP: ${ipAddress}`);
+  if (deviceName) parts.push(`Device: ${deviceName}`);
+  if (networkName) parts.push(`Network: ${networkName}`);
+  if (ipAddress) parts.push(`IP: ${ipAddress}`);
   return parts.join(" | ");
 }
 
@@ -298,22 +298,22 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   const { getLocation, loading: geoLoading, error: geoError } = useGeolocation();
   const { ready: faceApiReady, loading: faceApiLoading, waitForBlink, getDescriptor } = useFaceApi();
 
-  const videoRef  = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const clockPageRef = useRef<HTMLDivElement>(null);
 
   const [staffEmployees, setStaffEmployees] = useState<Person[]>([]);
-  const [members, setMembers]               = useState<Person[]>([]);
-  const [peopleLoading, setPeopleLoading]   = useState<boolean>(false);
-  const [searchTerm, setSearchTerm]         = useState<string>("");
+  const [members, setMembers] = useState<Person[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState<boolean>(false);
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [selectedPersonKey, setSelectedPersonKey] = useState<string>("");
-  const [status, setStatus]                 = useState<ActiveRecord | null>(null);
-  const [loading, setLoading]               = useState<boolean>(false);
-  const [message, setMessage]               = useState<StatusMessage | null>(null);
-  const [cameraOpen, setCameraOpen]         = useState<boolean>(false);
-  const [cameraReady, setCameraReady]       = useState<boolean>(false);
-  const [faceBusy, setFaceBusy]             = useState<boolean>(false);
-  const [facePreview, setFacePreview]       = useState<string | null>(null);
+  const [status, setStatus] = useState<ActiveRecord | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [message, setMessage] = useState<StatusMessage | null>(null);
+  const [cameraOpen, setCameraOpen] = useState<boolean>(false);
+  const [cameraReady, setCameraReady] = useState<boolean>(false);
+  const [faceBusy, setFaceBusy] = useState<boolean>(false);
+  const [facePreview, setFacePreview] = useState<string | null>(null);
   const [stationLinkCopied, setStationLinkCopied] = useState<boolean>(false);
   const [deviceBlocked, setDeviceBlocked] = useState<string>("");
   const [currentShift, setCurrentShift] = useState<ShiftWindow | null>(null);
@@ -346,28 +346,28 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
     };
   }, []);
 
-  const people         = sortPeople([...staffEmployees, ...members]);
-  const selfPerson     = buildFallbackEmployee(profile);
+  const people = sortPeople([...staffEmployees, ...members]);
+  const selfPerson = buildFallbackEmployee(profile);
   const selectedPerson: Person | null = standalone
     ? (people.find((p) => buildPersonKey(p) === selectedPersonKey) ?? null)
     : selfPerson;
-  const isManagementUser       = hasManagementAccess(profile?.role);
-  const selectedFaceReference  = normalizeFaceReference(
+  const isManagementUser = hasManagementAccess(profile?.role);
+  const selectedFaceReference = normalizeFaceReference(
     selectedPerson?.face_reference ??
     (selectedPerson?.kind === "staff" && selectedPerson.id === profile?.id
       ? profile?.face_reference
       : null)
   );
-  const isClockedIn     = Boolean(status);
-  const actionLabel     = isClockedIn ? "Clock Out" : "Clock In";
+  const isClockedIn = Boolean(status);
+  const actionLabel = isClockedIn ? "Clock Out" : "Clock In";
   const normalizedQuery = searchTerm.trim().toLowerCase();
-  const searchResults   = normalizedQuery
+  const searchResults = normalizedQuery
     ? people.filter((p) =>
-        [p.full_name ?? "", p.department ?? "", getRoleLabel(p.role)]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery)
-      )
+      [p.full_name ?? "", p.department ?? "", getRoleLabel(p.role)]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    )
     : [];
   const showSearchResults =
     Boolean(normalizedQuery) &&
@@ -438,7 +438,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   useEffect(() => {
     if (!cameraOpen || !streamRef.current || !videoRef.current) return;
     let cancelled = false;
-    const video  = videoRef.current;
+    const video = videoRef.current;
     const stream = streamRef.current;
 
     async function attach(): Promise<void> {
@@ -498,9 +498,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
           .order("full_name"),
       ]);
 
-      let nextStaff: Person[]   = mergeEmployees([], profile);
+      let nextStaff: Person[] = mergeEmployees([], profile);
       let nextMembers: Person[] = [];
-      const errors: string[]    = [];
+      const errors: string[] = [];
 
       if (staffResult.status === "fulfilled") {
         if (staffResult.value.error) {
@@ -748,10 +748,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         getLocation(),
         getPublicIpAddress(),
       ]);
-      const location  = locResult.status === "fulfilled" ? locResult.value : null;
+      const location = locResult.status === "fulfilled" ? locResult.value : null;
       const ipAddress = ipResult.status === "fulfilled" ? (ipResult.value as string | null) : null;
-      const device    = getDeviceMetadata();
-      const network   = getNetworkMetadata();
+      const device = getDeviceMetadata();
+      const network = getNetworkMetadata();
       const clientEventId = createClientEventId();
       if (!currentShift) {
         if (person.kind === "member" && !scheduleConfigured) {
@@ -763,9 +763,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         person,
         similarity,
         locationName: (location as { location_name?: string } | null)?.location_name ?? null,
-        deviceName:   device.deviceName,
-        networkName:  network.networkName,
-        ipAddress:    ipAddress ?? null,
+        deviceName: device.deviceName,
+        networkName: network.networkName,
+        ipAddress: ipAddress ?? null,
       });
 
       if (person.kind === "member") {
@@ -773,7 +773,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         const activeEntry = status as MemberEntry | null;
         if (activeEntry?.id) {
           // Clock out
-          const now   = new Date();
+          const now = new Date();
           const hours = differenceInMinutes(now, parseISO(activeEntry.punch_in)) / 60;
           const { error } = standalone && kioskIsConfigured()
             ? await kioskPunchMember({ member_id: person.id, punch_type: "out", entry_id: activeEntry.id, punched_at: now.toISOString(), hours: parseFloat(hours.toFixed(2)), note })
@@ -790,15 +790,15 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       } else {
         const punchPayload: InsertPunchPayload = {
           client_event_id: clientEventId,
-          user_id:             person.id,
+          user_id: person.id,
           type,
-          timestamp:           new Date().toISOString(),
-          latitude:            (location as { latitude?: number } | null)?.latitude ?? null,
-          longitude:           (location as { longitude?: number } | null)?.longitude ?? null,
-          location_name:       (location as { location_name?: string } | null)?.location_name ?? null,
-          device_name:         device.deviceName,
-          ip_address:          ipAddress ?? null,
-          network_name:        network.networkName,
+          timestamp: new Date().toISOString(),
+          latitude: (location as { latitude?: number } | null)?.latitude ?? null,
+          longitude: (location as { longitude?: number } | null)?.longitude ?? null,
+          location_name: (location as { location_name?: string } | null)?.location_name ?? null,
+          device_name: device.deviceName,
+          ip_address: ipAddress ?? null,
+          network_name: network.networkName,
           verification_method: "face_clock",
           note,
           shift_type: currentShift?.shiftType,
@@ -887,9 +887,9 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
       }
       const firstPhoto = captureVideoFrame(video);
       await new Promise((resolve) => window.setTimeout(resolve, 850));
-      const photo      = captureVideoFrame(video);
-      const motion     = await measureFrameMotion(firstPhoto, photo);
-      const liveRef    = await createFaceReference(photo);
+      const photo = captureVideoFrame(video);
+      const motion = await measureFrameMotion(firstPhoto, photo);
+      const liveRef = await createFaceReference(photo);
       const liveDetection = await getDescriptor(video);
       if (!selectedFaceReference.hasFace) {
         throw new Error("Your saved enrollment is incomplete. Re-enroll your face in Settings, then save your account changes.");
@@ -944,32 +944,18 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
   return (
     <div
       ref={clockPageRef}
-      className={`mx-auto space-y-6 ${
-        standalone ? "page-ambient min-h-screen max-w-5xl px-4 py-6 sm:px-6" : "page-ambient max-w-4xl"
-      }`}
+      className={`mx-auto space-y-6 ${standalone ? "page-ambient min-h-screen max-w-5xl px-4 py-6 sm:px-6" : "page-ambient max-w-4xl"
+        }`}
     >
       {deviceBlocked && standalone && (
         <div className="rounded-2xl border border-danger/30 bg-danger/10 px-5 py-4 text-danger">{deviceBlocked}</div>
       )}
-      <div className="flex items-start justify-between gap-4 animate-fade-up">
-        <div>
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-          Time Clock
-        </div>
-        <h2 className="mt-3 font-display font-bold text-2xl text-ink">Time Clock</h2>
-        <p className="text-ink-muted text-sm mt-1">
-          {standalone
-            ? "Select an employee or member then complete face verification to record the punch."
-            : "Complete face verification to record your own clock-in or clock-out."}
-        </p>
-        </div>
-        {standalone && (
-          <button type="button" onClick={() => void toggleFullscreen()} className="btn-secondary shrink-0" title="Toggle fullscreen kiosk mode">
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            <span className="hidden sm:inline">{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</span>
-          </button>
-        )}
-      </div>
+      <PageHeader eyebrow={standalone ? "Clock station" : "Attendance"} title="Time clock" description={standalone ? "Select an employee or member, then verify to record the punch." : "Complete face verification to record your own clock-in or clock-out."} actions={standalone && (
+        <button type="button" onClick={() => void toggleFullscreen()} className="btn-secondary shrink-0" title="Toggle fullscreen kiosk mode">
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          <span>{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</span>
+        </button>
+      )} />
 
       {/* Station link for management */}
       {!standalone && isManagementUser && (
@@ -1001,11 +987,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
         {/* Status ring */}
         <div className="flex justify-center mt-8 mb-6">
           <div
-            className={`relative w-32 h-32 rounded-full flex items-center justify-center ${
-              isClockedIn
+            className={`relative w-32 h-32 rounded-full flex items-center justify-center ${isClockedIn
                 ? "bg-accent/10 border-2 border-accent clock-ring"
                 : "bg-page-bg border-2 border-border"
-            }`}
+              }`}
           >
             <Clock className={`w-10 h-10 ${isClockedIn ? "text-accent" : "text-ink-muted"}`} />
             {isClockedIn && (
@@ -1080,11 +1065,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
 
         {message && (
           <div
-            className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 mb-4 ${
-              message.type === "success"
+            className={`flex items-center gap-2 text-sm rounded-xl px-4 py-3 mb-4 ${message.type === "success"
                 ? "bg-accent/10 border border-accent/20 text-accent"
                 : "bg-danger/10 border border-danger/20 text-danger"
-            }`}
+              }`}
           >
             {message.type === "success" ? (
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
@@ -1103,9 +1087,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                 <UserRound className="w-4 h-4 text-accent" />
                 <span className="font-medium">{selectedPerson.full_name ?? "Unknown"}</span>
                 <span
-                  className={`badge text-[10px] uppercase tracking-wide ${
-                    selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"
-                  }`}
+                  className={`badge text-[10px] uppercase tracking-wide ${selectedPerson.kind === "member" ? "badge-yellow" : "badge-blue"
+                    }`}
                 >
                   {selectedPerson.kind === "member" ? "Member" : "Employee"}
                 </span>
@@ -1117,8 +1100,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
 
             {/* Clock status */}
             {isClockedIn ? (
-                <div className="mb-2">
-                  <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
+              <div className="mb-2">
+                <div className="badge-green mx-auto w-fit mb-2">CLOCKED IN</div>
                 <p className="text-ink-muted text-sm">
                   Clocked in for{" "}
                   {selectedPerson.kind === "member" ? (
@@ -1158,7 +1141,7 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
             )}
 
             {/* Camera / face preview */}
-              <div className="rounded-[28px] overflow-hidden border border-border bg-card-bg max-w-sm mx-auto aspect-square">
+            <div className="rounded-[28px] overflow-hidden border border-border bg-card-bg max-w-sm mx-auto aspect-square">
               {cameraOpen ? (
                 <video
                   ref={videoRef}
@@ -1187,11 +1170,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                 type="button"
                 onClick={handleFacePunch}
                 disabled={loading || geoLoading || faceBusy || faceApiLoading || !selectedFaceReference}
-                className={`py-4 px-6 rounded-2xl font-display font-bold text-lg transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 ${
-                  isClockedIn
+                className={`py-4 px-6 rounded-2xl font-display font-bold text-lg transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 ${isClockedIn
                     ? "bg-danger/10 border border-danger/30 text-danger hover:bg-danger/20"
                     : "btn-primary"
-                }`}
+                  }`}
               >
                 {loading || geoLoading || faceBusy ? (
                   <>
@@ -1204,10 +1186,10 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                     {faceApiLoading
                       ? "Loading face checks..."
                       : cameraOpen
-                      ? cameraReady
-                        ? `${actionLabel} ${selectedPerson.full_name ?? ""}`
-                        : "Preparing Camera..."
-                      : `Start ${actionLabel}`}
+                        ? cameraReady
+                          ? `${actionLabel} ${selectedPerson.full_name ?? ""}`
+                          : "Preparing Camera..."
+                        : `Start ${actionLabel}`}
                   </>
                 )}
               </button>
@@ -1216,8 +1198,8 @@ export default function ClockPage({ standalone = false }: ClockPageProps) {
                   type="button"
                   onClick={stopFaceCamera}
                   disabled={loading || faceBusy}
-                    className="btn-secondary"
-                  >
+                  className="btn-secondary"
+                >
                   Cancel Camera
                 </button>
               )}

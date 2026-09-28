@@ -1,3 +1,4 @@
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode, type ComponentType, type SVGProps } from "react";
 import type { FaceEnrollment } from "../types";
 import {
@@ -13,10 +14,11 @@ import {
   Settings2,
   Shield,
   User,
-} from "lucide-react";
+} from "../components/solar";
 import FaceCaptureField from "../components/FaceCaptureField";
 import AvatarUpload from "../components/AvatarUpload";
 import InitialsAvatar from "../components/InitialsAvatar";
+import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import type { WeekDayValue } from "../lib/systemSettings";
 import {
@@ -33,11 +35,11 @@ import { DEPARTMENT_OPTIONS, getRoleLabel } from "../lib/workforce";
 import { sendTestEmail } from "../lib/emailTest";
 
 const TAB_CONFIG = [
-  { id: "general",       label: "General",          description: "", icon: Settings2    },
-  { id: "email",         label: "Email/SMTP",        description: "", icon: Mail         },
-  { id: "attendance",    label: "Attendance Rules",  description: "", icon: CalendarClock },
-  { id: "notifications", label: "Notifications",     description: "", icon: Bell         },
-  { id: "account",       label: "Account",           description: "", icon: User         },
+  { id: "general", label: "General", description: "", icon: Settings2 },
+  { id: "email", label: "Email/SMTP", description: "", icon: Mail },
+  { id: "attendance", label: "Attendance Rules", description: "", icon: CalendarClock },
+  { id: "notifications", label: "Notifications", description: "", icon: Bell },
+  { id: "account", label: "Account", description: "", icon: User },
 ];
 
 function getTimezoneOptions() {
@@ -65,8 +67,8 @@ type TabButtonProps = {
   description?: string;
   onClick: () => void;
 };
-type DayCheckboxProps  = { label: string; checked: boolean; onChange: (event: ChangeEvent<HTMLInputElement>) => void };
-type ToggleRowProps    = { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean };
+type DayCheckboxProps = { label: string; checked: boolean; onChange: (event: ChangeEvent<HTMLInputElement>) => void };
+type ToggleRowProps = { label: string; description?: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean };
 
 // ── Tab button — navy sidebar style ──────────────────────────────────────────
 function TabButton({ active, icon: Icon, label, description, onClick }: TabButtonProps) {
@@ -74,15 +76,13 @@ function TabButton({ active, icon: Icon, label, description, onClick }: TabButto
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
-        active
-          ? "border-primary/30 bg-primary/10 text-ink shadow-[0_0_0_1px_rgba(37,99,235,0.10)]"
+      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${active
+          ? "border-primary/30 bg-primary/10 text-ink "
           : "border-border bg-card-bg text-ink-muted hover:border-primary/20 hover:bg-page-bg hover:text-ink"
-      }`}
+        }`}
     >
-      <div className={`mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border ${
-        active ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-page-bg text-ink-muted"
-      }`}>
+      <div className={`mt-0.5 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border ${active ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-page-bg text-ink-muted"
+        }`}>
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
@@ -96,7 +96,7 @@ function TabButton({ active, icon: Icon, label, description, onClick }: TabButto
 
 function SectionCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <section className="rounded-3xl border border-border bg-card-bg p-5 shadow-sm">
+    <section className="rounded-3xl border border-border bg-card-bg p-5 ">
       <div className="mb-5">
         <h3 className="font-display text-lg font-semibold text-ink">{title}</h3>
         {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
@@ -118,15 +118,13 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function DayCheckbox({ label, checked, onChange }: DayCheckboxProps) {
   return (
-    <label className={`flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 transition-colors ${
-      checked
+    <label className={`flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 transition-colors ${checked
         ? "border-primary/25 bg-primary/10 text-ink"
         : "border-border bg-page-bg text-ink-muted hover:border-primary/20 hover:text-ink"
-    }`}>
-      <span className="text-sm font-medium">{label}</span>
-      <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
-        checked ? "border-primary bg-primary text-white" : "border-border bg-transparent text-transparent"
       }`}>
+      <span className="text-sm font-medium">{label}</span>
+      <span className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${checked ? "border-primary bg-primary text-white" : "border-border bg-transparent text-transparent"
+        }`}>
         <CheckCircle className="h-4 w-4" />
       </span>
       <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
@@ -136,9 +134,8 @@ function DayCheckbox({ label, checked, onChange }: DayCheckboxProps) {
 
 function ToggleRow({ label, description, checked, onChange, disabled = false }: ToggleRowProps) {
   return (
-    <div className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${
-      checked ? "border-primary/20 bg-primary/5" : "border-border bg-page-bg"
-    }`}>
+    <div className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${checked ? "border-primary/20 bg-primary/5" : "border-border bg-page-bg"
+      }`}>
       <div className="min-w-0">
         <p className="text-sm font-medium text-ink">{label}</p>
         {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
@@ -149,13 +146,11 @@ function ToggleRow({ label, description, checked, onChange, disabled = false }: 
         aria-checked={checked}
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
-        className={`relative mt-1 inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-colors ${
-          checked ? "border-primary/40 bg-primary" : "border-border bg-page-bg"
-        } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
+        className={`relative mt-1 inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-colors ${checked ? "border-primary/40 bg-primary" : "border-border bg-page-bg"
+          } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
       >
-        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-6" : "translate-x-1"
-        }`} />
+        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${checked ? "translate-x-6" : "translate-x-1"
+          }`} />
       </button>
     </div>
   );
@@ -165,11 +160,10 @@ function Toast({ toast }: { toast: ToastMessage | null }) {
   if (!toast) return null;
   return (
     <div className="fixed right-6 top-6 z-[140] animate-fade-up">
-      <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur ${
-        toast.type === "error"
+      <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 backdrop-blur ${toast.type === "error"
           ? "border-danger/30 bg-danger/10 text-danger"
           : "border-primary/30 bg-card-bg text-ink"
-      }`}>
+        }`}>
         {toast.type === "error"
           ? <AlertCircle className="h-4 w-4" />
           : <CheckCircle className="h-4 w-4 text-primary" />}
@@ -190,32 +184,32 @@ function readFileAsDataUrl(file: File) {
 
 export default function SettingsPage() {
   const { profile, updateAccount, user } = useAuth();
-  const [activeTab, setActiveTab]               = useState("general");
-  const [systemSettings, setSystemSettings]     = useState(defaultSystemSettings);
-  const [storageMode, setStorageMode]           = useState("local");
-  const [remoteNotice, setRemoteNotice]         = useState("");
-  const [accountForm, setAccountForm]           = useState<AccountFormState>({
-    full_name:      profile?.full_name    || "",
-    department:     profile?.department   || "",
-    company_name:   profile?.company_name || "",
-    avatar_url:     profile?.avatar_url || "",
-    hourly_rate:    profile?.hourly_rate  || "",
+  const [activeTab, setActiveTab] = useState("general");
+  const [systemSettings, setSystemSettings] = useState(defaultSystemSettings);
+  const [storageMode, setStorageMode] = useState("local");
+  const [remoteNotice, setRemoteNotice] = useState("");
+  const [accountForm, setAccountForm] = useState<AccountFormState>({
+    full_name: profile?.full_name || "",
+    department: profile?.department || "",
+    company_name: profile?.company_name || "",
+    avatar_url: profile?.avatar_url || "",
+    hourly_rate: profile?.hourly_rate || "",
     faceEnrollment: null,
   });
-  const [saving, setSaving]                     = useState(false);
-  const [loadingSettings, setLoadingSettings]   = useState(true);
-  const [error, setError]                       = useState("");
-  const [toast, setToast]                       = useState<ToastMessage | null>(null);
-  const [smtpTesting, setSmtpTesting]           = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [smtpTesting, setSmtpTesting] = useState(false);
   const [testRecipientAddress, setTestRecipientAddress] = useState("");
 
   useEffect(() => {
     setAccountForm({
-      full_name:      profile?.full_name    || "",
-      department:     profile?.department   || "",
-      company_name:   profile?.company_name || "",
-      avatar_url:     profile?.avatar_url || "",
-      hourly_rate:    profile?.hourly_rate  || "",
+      full_name: profile?.full_name || "",
+      department: profile?.department || "",
+      company_name: profile?.company_name || "",
+      avatar_url: profile?.avatar_url || "",
+      hourly_rate: profile?.hourly_rate || "",
       faceEnrollment: null,
     });
   }, [profile]);
@@ -241,8 +235,8 @@ export default function SettingsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
-  const activeTabMeta  = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0];
-  const ActiveTabIcon  = activeTabMeta.icon;
+  const activeTabMeta = TAB_CONFIG.find((tab) => tab.id === activeTab) || TAB_CONFIG[0];
+  const ActiveTabIcon = activeTabMeta.icon;
   const isImmediateApplyTab = activeTab === "email" || activeTab === "attendance";
 
   const setAccountField = (key: keyof Omit<AccountFormState, "faceEnrollment">) =>
@@ -288,11 +282,11 @@ export default function SettingsPage() {
       if (activeTab === "account") {
         if (!profile) throw new Error("Your account profile is still loading.");
         await updateAccount({
-          full_name:      accountForm.full_name,
-          department:     accountForm.department,
-          company_name:   accountForm.company_name,
-          avatar_url:     accountForm.avatar_url || null,
-          hourly_rate:    parseFloat(String(accountForm.hourly_rate)) || 0,
+          full_name: accountForm.full_name,
+          department: accountForm.department,
+          company_name: accountForm.company_name,
+          avatar_url: accountForm.avatar_url || null,
+          hourly_rate: parseFloat(String(accountForm.hourly_rate)) || 0,
           face_reference: accountForm.faceEnrollment?.cleared
             ? null
             : accountForm.faceEnrollment
@@ -357,14 +351,14 @@ export default function SettingsPage() {
               <input className="input" value={systemSettings.general.organisationName} onChange={(e) => setSystemField("general", "organisationName", e.target.value)} placeholder="AttendanceIQ" />
             </Field>
             <Field label="Timezone" hint="Critical for accurate check-in and check-out times across all records.">
-              <select className="input" value={systemSettings.general.timezone} onChange={(e) => setSystemField("general", "timezone", e.target.value)}>
+              <CustomSelect className="input" value={systemSettings.general.timezone} onChange={(e) => setSystemField("general", "timezone", e.target.value)}>
                 {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-              </select>
+              </CustomSelect>
             </Field>
             <Field label="Date Format Preference" hint="Choose how dates appear across the admin experience.">
-              <select className="input" value={systemSettings.general.dateFormat} onChange={(e) => setSystemField("general", "dateFormat", e.target.value)}>
+              <CustomSelect className="input" value={systemSettings.general.dateFormat} onChange={(e) => setSystemField("general", "dateFormat", e.target.value)}>
                 {DATE_FORMAT_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-              </select>
+              </CustomSelect>
             </Field>
             <Field label="Official Check-In Window" hint="Earliest time a check-in is accepted.">
               <input type="time" className="input" value={systemSettings.general.officialCheckInWindow} onChange={(e) => setSystemField("general", "officialCheckInWindow", e.target.value)} />
@@ -522,9 +516,9 @@ export default function SettingsPage() {
               <ToggleRow label="Weekly Summary Report" description="Send a weekly attendance digest to the admin inbox." checked={systemSettings.notifications.weeklySummaryReport} onChange={(checked) => setSystemField("notifications", "weeklySummaryReport", checked)} />
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Weekly Summary Day">
-                  <select className="input" value={systemSettings.notifications.weeklySummaryDay} onChange={(e) => setSystemField("notifications", "weeklySummaryDay", e.target.value)} disabled={!systemSettings.notifications.weeklySummaryReport}>
+                  <CustomSelect className="input" value={systemSettings.notifications.weeklySummaryDay} onChange={(e) => setSystemField("notifications", "weeklySummaryDay", e.target.value)} disabled={!systemSettings.notifications.weeklySummaryReport}>
                     {WEEKLY_SUMMARY_DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
-                  </select>
+                  </CustomSelect>
                 </Field>
                 <Field label="Weekly Summary Time">
                   <input type="time" className="input" value={systemSettings.notifications.weeklySummaryTime} onChange={(e) => setSystemField("notifications", "weeklySummaryTime", e.target.value)} disabled={!systemSettings.notifications.weeklySummaryReport} />
@@ -554,10 +548,10 @@ export default function SettingsPage() {
             <Field label="Full Name"><input className="input" value={accountForm.full_name} onChange={setAccountField("full_name")} placeholder="Your full name" /></Field>
             <Field label="Company Name"><input className="input" value={accountForm.company_name} onChange={setAccountField("company_name")} placeholder="Your company name" /></Field>
             <Field label="Department">
-              <select className="input" value={accountForm.department} onChange={setAccountField("department")}>
+              <CustomSelect className="input" value={accountForm.department} onChange={setAccountField("department")}>
                 <option value="">Select a department</option>
                 {DEPARTMENT_OPTIONS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-              </select>
+              </CustomSelect>
             </Field>
             <Field label="Hourly Rate (GHS)"><input type="number" className="input" value={accountForm.hourly_rate} onChange={setAccountField("hourly_rate")} placeholder="0" /></Field>
             <Field label="Profile Photo"><AvatarUpload name={accountForm.full_name} value={accountForm.avatar_url} onChange={(avatar_url) => setAccountForm((current) => ({ ...current, avatar_url }))} /></Field>
@@ -574,10 +568,10 @@ export default function SettingsPage() {
         <SectionCard title="Account" description="A quick overview of the current account details attached to your profile.">
           <div className="space-y-3">
             {[
-              { label: "Email",       value: user?.email },
-              { label: "Role",        value: getRoleLabel(profile?.role) },
-              { label: "Company",     value: profile?.company_name || "—" },
-              { label: "Face Clock",  value: profile?.face_reference ? "Enrolled" : "Not enrolled yet" },
+              { label: "Email", value: user?.email },
+              { label: "Role", value: getRoleLabel(profile?.role) },
+              { label: "Company", value: profile?.company_name || "—" },
+              { label: "Face Clock", value: profile?.face_reference ? "Enrolled" : "Not enrolled yet" },
               { label: "Member since", value: profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "—" },
             ].map(({ label, value }, idx, arr) => (
               <div key={label} className={`flex justify-between gap-3 py-2 ${idx < arr.length - 1 ? "border-b border-border" : ""}`}>
@@ -613,33 +607,27 @@ export default function SettingsPage() {
       );
     }
     switch (activeTab) {
-      case "general":       return renderGeneralPanel();
-      case "email":         return renderEmailPanel();
-      case "attendance":    return renderAttendancePanel();
+      case "general": return renderGeneralPanel();
+      case "email": return renderEmailPanel();
+      case "attendance": return renderAttendancePanel();
       case "notifications": return renderNotificationsPanel();
-      case "account":       return renderAccountPanel();
-      default:              return renderGeneralPanel();
+      case "account": return renderAccountPanel();
+      default: return renderGeneralPanel();
     }
   }
 
   return (
     <>
       <Toast toast={toast} />
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
 
-        <div className="animate-fade-up">
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Settings
-          </div>
-          <h2 className="mt-3 text-2xl font-bold text-ink">Settings</h2>
-          <p className="mt-1 text-sm text-ink-muted">Configure your organization, communication rules, attendance logic, and personal account details.</p>
-        </div>
+        <PageHeader eyebrow="Configuration" title="Settings" description="Configure your organization, attendance rules, communications, and account details." />
 
         <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
 
           {/* Settings tab sidebar — navy */}
           <aside className="animate-fade-up xl:sticky xl:top-6 xl:self-start">
-            <div className="rounded-xl border border-border bg-card-bg p-4 shadow-sm">
+            <div className="rounded-xl border border-border bg-card-bg p-4 ">
               <p className="px-2 text-xs font-semibold uppercase tracking-[0.24em] text-ink-muted">Settings Tabs</p>
               <div className="mt-4 space-y-2">
                 {TAB_CONFIG.map((tab) => (

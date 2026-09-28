@@ -1,3 +1,5 @@
+import CustomDatePicker from "../components/CustomDatePicker";
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { format } from "date-fns";
 import {
@@ -9,11 +11,13 @@ import {
   Trash2,
   UserRound,
   X,
-} from "lucide-react";
+} from "../components/solar";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import InitialsAvatar from "../components/InitialsAvatar";
 import Skeleton from "../components/Skeleton";
+import PageHeader from "../components/PageHeader";
+import RowActionMenu from "../components/RowActionMenu";
 
 type VisitorHost = {
   full_name?: string | null;
@@ -261,8 +265,7 @@ function VisitorFormModal({ initial, members, saving, onClose, onSave }: Visitor
           </div>
           <div>
             <label className="label">Visit Date</label>
-            <input
-              type="date"
+            <CustomDatePicker
               className="input"
               value={form.visit_date}
               onChange={set("visit_date")}
@@ -340,20 +343,20 @@ export default function VisitorsPage() {
       supabase
         .from("visitors")
         .select(`
-          id,
-          full_name,
-          company_name,
-          purpose_of_visit,
-          host_member_id,
-          phone,
-          email,
-          notes,
-          visit_date,
-          created_by,
-          created_at,
-          updated_at,
-          host_member:members!visitors_host_member_id_fkey(full_name)
-        `)
+ id,
+ full_name,
+ company_name,
+ purpose_of_visit,
+ host_member_id,
+ phone,
+ email,
+ notes,
+ visit_date,
+ created_by,
+ created_at,
+ updated_at,
+ host_member:members!visitors_host_member_id_fkey(full_name)
+ `)
         .order("created_at", { ascending: false }),
     ]);
 
@@ -417,39 +420,39 @@ export default function VisitorsPage() {
           .update(payloadWithTimestamp)
           .eq("id", form.id)
           .select(`
-            id,
-            full_name,
-            company_name,
-            purpose_of_visit,
-            host_member_id,
-            phone,
-            email,
-            notes,
-            visit_date,
-            created_by,
-            created_at,
-            updated_at,
-            host_member:members!visitors_host_member_id_fkey(full_name)
-          `)
+ id,
+ full_name,
+ company_name,
+ purpose_of_visit,
+ host_member_id,
+ phone,
+ email,
+ notes,
+ visit_date,
+ created_by,
+ created_at,
+ updated_at,
+ host_member:members!visitors_host_member_id_fkey(full_name)
+ `)
           .maybeSingle()
         : await supabase
           .from("visitors")
           .insert(createPayloadWithTimestamp)
           .select(`
-            id,
-            full_name,
-            company_name,
-            purpose_of_visit,
-            host_member_id,
-            phone,
-            email,
-            notes,
-            visit_date,
-            created_by,
-            created_at,
-            updated_at,
-            host_member:members!visitors_host_member_id_fkey(full_name)
-          `)
+ id,
+ full_name,
+ company_name,
+ purpose_of_visit,
+ host_member_id,
+ phone,
+ email,
+ notes,
+ visit_date,
+ created_by,
+ created_at,
+ updated_at,
+ host_member:members!visitors_host_member_id_fkey(full_name)
+ `)
           .maybeSingle();
 
       if (saveResult.error && isUpdatedAtColumnError(saveResult.error)) {
@@ -459,37 +462,37 @@ export default function VisitorsPage() {
             .update(payload)
             .eq("id", form.id)
             .select(`
-              id,
-              full_name,
-              company_name,
-              purpose_of_visit,
-              host_member_id,
-              phone,
-              email,
-              notes,
-              visit_date,
-              created_by,
-              created_at,
-              host_member:members!visitors_host_member_id_fkey(full_name)
-            `)
+ id,
+ full_name,
+ company_name,
+ purpose_of_visit,
+ host_member_id,
+ phone,
+ email,
+ notes,
+ visit_date,
+ created_by,
+ created_at,
+ host_member:members!visitors_host_member_id_fkey(full_name)
+ `)
             .maybeSingle()
           : await supabase
             .from("visitors")
             .insert(createPayload)
             .select(`
-              id,
-              full_name,
-              company_name,
-              purpose_of_visit,
-              host_member_id,
-              phone,
-              email,
-              notes,
-              visit_date,
-              created_by,
-              created_at,
-              host_member:members!visitors_host_member_id_fkey(full_name)
-            `)
+ id,
+ full_name,
+ company_name,
+ purpose_of_visit,
+ host_member_id,
+ phone,
+ email,
+ notes,
+ visit_date,
+ created_by,
+ created_at,
+ host_member:members!visitors_host_member_id_fkey(full_name)
+ `)
             .maybeSingle();
       }
     } finally {
@@ -568,28 +571,19 @@ export default function VisitorsPage() {
   }, [dateFilter, search, visitors]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Visitors
-          </div>
-          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Visitors</h2>
-          <p className="mt-1 text-sm text-ink-muted">Track guests, their companies, their visit purpose, and the member hosting them.</p>
-        </div>
-        <button
-          onClick={() => {
-            setEditingVisitor(null);
-            setShowForm(true);
-          }}
-          disabled={members.length === 0}
-          className="btn-primary text-sm disabled:opacity-50"
-          title={members.length === 0 ? "Add a member before registering visitors." : "Register a visitor"}
-        >
-          <Plus className="h-4 w-4" />
-          Register Visitor
-        </button>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="Front desk" title="Visitors" description="Track guests, their companies, visit purpose, and the member hosting them." actions={<button
+        onClick={() => {
+          setEditingVisitor(null);
+          setShowForm(true);
+        }}
+        disabled={members.length === 0}
+        className="btn-primary text-sm disabled:opacity-50"
+        title={members.length === 0 ? "Add a member before registering visitors." : "Register a visitor"}
+      >
+        <Plus className="h-4 w-4" />
+        Register Visitor
+      </button>} />
 
       {schemaError && (
         <div className="rounded-2xl border border-warn/20 bg-warn/10 px-4 py-3 text-sm text-warn">
@@ -613,14 +607,16 @@ export default function VisitorsPage() {
         </div>
       )}
 
-      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
-        <div className="relative flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input
-          className="input pl-10"
-          placeholder="Search visitor, company, purpose, or host member..."
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1"><span className="label">Search visitors</span><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input
+          type="search"
+          className="input pl-9"
+          placeholder="Visitor, company, purpose, or host"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-        /></div>
-        <select className="input sm:w-44" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}><option value="all">All visits</option><option value="today">Today</option></select>
+        /></div></label>
+        <label className="sm:w-44"><span className="label">Visit date</span><CustomSelect className="input" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}><option value="all">All visits</option><option value="today">Today</option></CustomSelect></label>
+
       </div>
 
       <div className="card animate-fade-up overflow-hidden">
@@ -633,7 +629,7 @@ export default function VisitorsPage() {
                 <th className="table-header px-5 py-3 text-left">Purpose of Visit</th>
                 <th className="table-header px-5 py-3 text-left">Host Member</th>
                 <th className="table-header px-5 py-3 text-left">Registered</th>
-                <th className="table-header px-5 py-3 text-right">Actions</th>
+                <th className="table-header px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -686,27 +682,7 @@ export default function VisitorsPage() {
                           {visitor.created_at ? format(new Date(visitor.created_at), "hh:mm a") : "-"}
                         </p>
                       </td>
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingVisitor(buildFormStateFromVisitor(visitor));
-                              setShowForm(true);
-                            }}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-page-bg text-ink-muted transition-colors hover:bg-page-bg hover:text-ink"
-                            aria-label={`Edit ${visitor.full_name}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteTarget(visitor)}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger/30 bg-danger/10 text-danger transition-colors hover:bg-danger/20"
-                            aria-label={`Delete ${visitor.full_name}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                      <td className="px-5 py-2 text-right"><RowActionMenu label={visitor.full_name || "visitor"} actions={[{ label: "Edit", icon: <Pencil className="h-4 w-4" />, onSelect: () => { setEditingVisitor(buildFormStateFromVisitor(visitor)); setShowForm(true); } }, { label: "Delete", icon: <Trash2 className="h-4 w-4" />, danger: true, onSelect: () => setDeleteTarget(visitor) }]} /></td>
                     </tr>
                   );
                 })

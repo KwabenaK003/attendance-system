@@ -1,10 +1,14 @@
+import CustomDatePicker from "../components/CustomDatePicker";
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { format, parseISO } from "date-fns";
-import { AlertCircle, CheckCircle2, CreditCard, MoreVertical, Pencil, Plus, Search, Trash2, WalletCards } from "lucide-react";
+import { AlertCircle, CheckCircle2, CreditCard, MoreVertical, Pencil, Plus, Search, Trash2, WalletCards } from "../components/solar";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import InitialsAvatar from "../components/InitialsAvatar";
+import PageHeader from "../components/PageHeader";
+import RowActionMenu from "../components/RowActionMenu";
 
 type PaymentMethod = "bank_transfer" | "mobile_money" | "cash" | "other";
 type PayableSession = { source: "employee" | "member"; punchInId?: string | null; punchOutId?: string | null; entryId?: string | null };
@@ -336,8 +340,8 @@ export default function PayrollPage() {
     finally { setSaving(false); }
   }
 
-  return <div className="mx-auto max-w-7xl space-y-6">
-    <div className="flex flex-wrap items-end justify-between gap-4 animate-fade-up"><div><div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary"><WalletCards className="h-3.5 w-3.5" /> Activity</div><h2 className="mt-3 font-display text-2xl font-bold text-ink">Payroll</h2><p className="mt-1 text-sm text-ink-muted">Calculate unpaid completed time, then log manually completed payments.</p></div><div className="rounded-xl border border-border bg-card-bg px-4 py-3 text-right"><p className="text-xs text-ink-muted">Pending payments</p><p className="font-display text-xl font-bold text-ink">{pending.length}</p></div></div>
+  return <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+    <PageHeader eyebrow="Compensation" title="Payroll" description="Review completed unpaid time and record payments made outside the system." summary={<div className="rounded-xl border border-border bg-card-bg px-4 py-3 sm:min-w-40 sm:text-right"><p className="text-xs text-ink-muted">Pending payments</p><p className="font-display text-2xl font-semibold tabular-nums text-ink">{pending.length}</p></div>} />
     {error && <div className="flex gap-2 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}
     {success && <div className="flex gap-2 rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-success"><CheckCircle2 className="h-4 w-4 shrink-0" />{success}</div>}
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border"><div className="flex gap-5"><button type="button" onClick={() => setTab("pending")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "pending" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Pending payments</button><button type="button" onClick={() => setTab("history")} className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === "history" ? "border-primary text-primary" : "border-transparent text-ink-muted"}`}>Payment history</button></div><div className="mb-2 flex items-center gap-2"><input ref={payrollFileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(event) => void importPayrollFile(event)} /><button type="button" className="btn-secondary text-sm" disabled={importing} onClick={() => payrollFileRef.current?.click()}>{importing ? "Uploading…" : "Upload payroll"}</button><button type="button" onClick={startPayroll} className="btn-primary text-sm"><Plus className="h-4 w-4" />Add payroll</button></div></div>
@@ -347,7 +351,7 @@ export default function PayrollPage() {
         <div className="card overflow-x-auto"><div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3"><div><h3 className="font-display font-semibold text-ink">Staff with pending payments</h3><p className="mt-0.5 text-xs text-ink-muted">Completed unpaid attendance is ready to be added to payroll.</p></div><span className="badge badge-yellow">{filtered.length} pending</span></div><table className="w-full min-w-[1240px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Staff</th><th className="table-header px-3 py-3 text-left">Role</th><th className="table-header px-3 py-3 text-left">Employment status</th><th className="table-header px-3 py-3 text-left">Sessions</th><th className="table-header px-3 py-3 text-left">Regular hours</th><th className="table-header px-3 py-3 text-left">Overtime · 2.0x</th><th className="table-header px-3 py-3 text-left">Payment status</th><th className="table-header px-3 py-3 text-left">Rate</th><th className="table-header px-3 py-3 text-right">Amount due</th><th className="table-header px-3 py-3 text-center w-12"></th></tr></thead><tbody>{loading ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">Loading unpaid completed attendance…</td></tr> : filtered.length === 0 ? <tr><td colSpan={10} className="px-5 py-12 text-center text-ink-muted">No unpaid completed attendance is ready for payment.</td></tr> : filtered.map((item) => <tr key={item.key} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3"><div className="flex items-center gap-3"><InitialsAvatar name={item.personName} src={item.avatarUrl} size="sm" /><div><p className="font-medium text-ink">{item.personName}</p><p className="text-xs capitalize text-ink-muted">{item.personKind}</p></div></div></td><td className="px-3 py-3 capitalize text-ink-muted">{item.role}</td><td className="px-3 py-3 capitalize text-ink-muted">{item.employmentStatus.replace("_", " ")}</td><td className="px-3 py-3 text-ink-muted">{item.sessions.length}</td><td className="px-3 py-3 text-ink-muted">{duration(item.regularMinutes)}</td><td className="px-3 py-3 text-warn">{duration(item.overtimeMinutes)}</td><td className="px-3 py-3"><span className="badge badge-yellow">Pending</span></td><td className="px-3 py-3 text-ink-muted">{money.format(item.rate)}/hr</td><td className="px-3 py-3 text-right font-semibold text-ink">{money.format(item.totalAmount)}</td><td className="px-3 py-3 text-center"><PendingActionMenu item={item} isOpen={openMenuId === `pending:${item.key}`} onToggle={() => setOpenMenuId(openMenuId === `pending:${item.key}` ? null : `pending:${item.key}`)} onEdit={() => { setOpenMenuId(null); setMethod(item.paymentMethod || method); setRunDate(item.payrollDate || runDate); setReference(item.paymentReference || ""); setEditingPending(item); }} onDelete={() => { setOpenMenuId(null); if (item.isManualPayroll) { void deleteManualPendingPayroll(item); } else { setDismissingPending(item); } }} onPaid={() => { setOpenMenuId(null); if (item.isManualPayroll) void markPendingPayrollPaid(item); }} /></td></tr>)}</tbody></table></div>
       </>
     ) : (
-      <div className="card overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Run date</th><th className="table-header px-5 py-3 text-left">Payment method</th><th className="table-header px-5 py-3 text-left">People paid</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right">Total</th><th className="table-header px-3 py-3 text-center w-12">Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">Loading payment history…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">No payments have been logged yet.</td></tr> : runs.map((run) => <tr key={run.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 text-ink">{format(parseISO(run.run_date), "MMM d, yyyy")}</td><td className="px-5 py-3 capitalize text-ink-muted">{run.payment_method.replace("_", " ")}</td><td className="px-5 py-3 text-ink-muted">{run.payment_run_items?.length || 0}</td><td className="px-5 py-3"><span className={"badge " + (run.status === "completed" ? "badge-green" : "badge-red")}>{run.status}</span></td><td className="px-5 py-3 text-right font-semibold text-ink">{money.format(Number(run.total_amount || 0))}</td><td className="px-3 py-3 text-center"><button type="button" onClick={() => setDeletingRun(run)} className="rounded-lg p-1.5 text-danger transition-colors hover:bg-danger/10" title="Delete payroll entry"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div>
+      <div className="card overflow-x-auto"><table className="w-full min-w-[700px] text-sm"><thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Run date</th><th className="table-header px-5 py-3 text-left">Payment method</th><th className="table-header px-5 py-3 text-left">People paid</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right">Total</th><th className="table-header px-3 py-3 text-center w-12">Action</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">Loading payment history…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-5 py-12 text-center text-ink-muted">No payments have been logged yet.</td></tr> : runs.map((run) => <tr key={run.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 text-ink">{format(parseISO(run.run_date), "MMM d, yyyy")}</td><td className="px-5 py-3 capitalize text-ink-muted">{run.payment_method.replace("_", " ")}</td><td className="px-5 py-3 text-ink-muted">{run.payment_run_items?.length || 0}</td><td className="px-5 py-3"><span className={"badge " + (run.status === "completed" ? "badge-green" : "badge-red")}>{run.status}</span></td><td className="px-5 py-3 text-right font-semibold text-ink">{money.format(Number(run.total_amount || 0))}</td><td className="px-3 py-2 text-right"><RowActionMenu label="payroll entry" actions={[{ label: "Delete", icon: <Trash2 className="h-4 w-4" />, danger: true, onSelect: () => setDeletingRun(run) }]} /></td></tr>)}</tbody></table></div>
     )}
     {deletingRun && <DeleteConfirmDialog run={deletingRun} deleting={deleting} onCancel={() => setDeletingRun(null)} onConfirm={() => void deletePayroll(deletingRun.id)} />}
     {editingPending && <EditPendingDialog item={editingPending} people={payrollPeople} pending={pending} method={method} reference={reference} runDate={runDate} saving={saving} onMethodChange={setMethod} onReferenceChange={setReference} onRunDateChange={setRunDate} onCancel={() => setEditingPending(null)} onSelect={(key: string) => setSelectedKeys(key ? [key] : [])} onSubmit={(values: PayrollFormValues) => { const current = editingPending; setEditingPending(null); if (current?.isManualPayroll) { void updateManualPendingPayroll(current, values); } else { void markAsPaid(values); } }} />}
@@ -403,30 +407,30 @@ function PayrollEntryDialog({ people, pending, method, reference, runDate, savin
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="label">Name
-            <select className="input mt-1" value={activeKey} onChange={(event) => chooseStaff(event.target.value)}>
+            <CustomSelect className="input mt-1" value={activeKey} onChange={(event) => chooseStaff(event.target.value)}>
               <option value="">Select employee or member</option>
               {people.map((person) => {
                 const key = `${person.kind}:${person.id}`;
                 return <option key={key} value={key}>{person.full_name || "Unnamed"} · {person.kind === "employee" ? "Employee" : "Member"}</option>;
               })}
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">Role<input className="input mt-1" value={role} onChange={(event) => setRole(event.target.value)} placeholder="Role" /></label>
           <label className="label">Employment status
-            <select className="input mt-1" value={employmentStatus} onChange={(event) => setEmploymentStatus(event.target.value as PendingPayment["employmentStatus"])}>
+            <CustomSelect className="input mt-1" value={employmentStatus} onChange={(event) => setEmploymentStatus(event.target.value as PendingPayment["employmentStatus"])}>
               <option value="full_time">Full time</option><option value="part_time">Part time</option><option value="contract">Contract</option><option value="internship">Internship</option>
-            </select>
+            </CustomSelect>
           </label>
-          <label className="label">Payroll date<input type="date" className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} /></label>
+          <label className="label">Payroll date<CustomDatePicker className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} /></label>
           <label className="label">Regular/Overtime hours
-            <select className="input mt-1" value={hoursType} onChange={(event) => setHoursType(event.target.value as "regular" | "overtime")}><option value="regular">Regular hours</option><option value="overtime">Overtime hours</option></select>
+            <CustomSelect className="input mt-1" value={hoursType} onChange={(event) => setHoursType(event.target.value as "regular" | "overtime")}><option value="regular">Regular hours</option><option value="overtime">Overtime hours</option></CustomSelect>
           </label>
           <label className="label">{hoursType === "regular" ? "Regular hours" : "Overtime hours"}<input type="number" min="0" step="0.25" className="input mt-1" value={activeHours} onChange={(event) => hoursType === "regular" ? setRegularHours(Number(event.target.value)) : setOvertimeHours(Number(event.target.value))} /></label>
           <label className="label">Rate
-            <select className="input mt-1" value={rateType} onChange={(event) => setRateType(event.target.value as "normal" | "overtime")}><option value="normal">Normal hours</option><option value="overtime">Overtime rate</option></select>
+            <CustomSelect className="input mt-1" value={rateType} onChange={(event) => setRateType(event.target.value as "normal" | "overtime")}><option value="normal">Normal hours</option><option value="overtime">Overtime rate</option></CustomSelect>
           </label>
           <label className="label">{rateType === "normal" ? "Normal hourly rate" : "Overtime base rate"}<input type="number" min="0" step="0.01" className="input mt-1" value={baseRate} onChange={(event) => rateType === "normal" ? setNormalRate(Number(event.target.value)) : setOvertimeBaseRate(Number(event.target.value))} /><span className="mt-1 block text-xs text-ink-muted">{rateType === "overtime" ? `${money.format(baseRate)} × 2 = ${money.format(effectiveRate)}/hr` : `${money.format(effectiveRate)}/hr`}</span></label>
-          <label className="label">Payment method<select className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}><option value="bank_transfer">Bank transfer</option><option value="mobile_money">Mobile money</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
+          <label className="label">Payment method<CustomSelect className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}><option value="bank_transfer">Bank transfer</option><option value="mobile_money">Mobile money</option><option value="cash">Cash</option><option value="other">Other</option></CustomSelect></label>
           <label className="label">Reference <span className="font-normal text-ink-muted">(optional)</span><input className="input mt-1" value={reference} onChange={(event) => onReferenceChange(event.target.value)} placeholder="Transfer reference" /></label>
           <label className="label sm:col-span-2">Note<textarea className="input mt-1 resize-none" rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional payroll note" /></label>
         </div>
@@ -439,7 +443,7 @@ function PayrollEntryDialog({ people, pending, method, reference, runDate, savin
 }
 
 function PayrollFormDialog({ pending, selectedKeys, total, method, reference, runDate, saving, onToggle, onMethodChange, onReferenceChange, onRunDateChange, onCancel, onSubmit }: { pending: PendingPayment[]; selectedKeys: string[]; total: number; method: PaymentMethod; reference: string; runDate: string; saving: boolean; onToggle: (key: string) => void; onMethodChange: (method: PaymentMethod) => void; onReferenceChange: (reference: string) => void; onRunDateChange: (date: string) => void; onCancel: () => void; onSubmit: () => void }) {
-  return <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4"><div className="card max-h-[90vh] w-full max-w-3xl overflow-y-auto p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Manual payroll</p><h3 className="mt-1 font-display text-xl font-bold text-ink">Add payroll</h3><p className="mt-1 text-sm text-ink-muted">Select staff, record how you paid them, and save the payment run.</p></div><button type="button" className="btn-secondary px-3 py-2" onClick={onCancel}>Cancel</button></div><div className="grid gap-4 sm:grid-cols-3"><label className="label">Payroll date<input type="date" className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} /></label><label className="label">Payment method<select className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}><option value="bank_transfer">Bank transfer</option><option value="mobile_money">Mobile money</option><option value="cash">Cash</option><option value="other">Other</option></select></label><label className="label">Reference <span className="font-normal text-ink-muted">(optional)</span><input className="input mt-1" value={reference} onChange={(event) => onReferenceChange(event.target.value)} placeholder="Transfer reference" /></label></div><div className="mt-6 overflow-hidden rounded-xl border border-border"><div className="flex items-center justify-between bg-page-bg px-4 py-3"><p className="text-sm font-semibold text-ink">Staff with pending payments</p><span className="text-xs text-ink-muted">Select one or more</span></div><div className="max-h-64 divide-y divide-border overflow-y-auto">{pending.length === 0 ? <p className="px-4 py-8 text-center text-sm text-ink-muted">There are no completed unpaid sessions to add.</p> : pending.map((item) => <label key={item.key} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-page-bg"><input type="checkbox" checked={selectedKeys.includes(item.key)} onChange={() => onToggle(item.key)} /><InitialsAvatar name={item.personName} size="sm" /><span className="min-w-0 flex-1"><span className="block font-medium text-ink">{item.personName}</span><span className="text-xs text-ink-muted">{duration(item.regularMinutes)} regular · {duration(item.overtimeMinutes)} overtime</span></span><strong className="text-sm text-ink">{money.format(item.totalAmount)}</strong></label>)}</div></div><div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3"><p className="text-sm font-medium text-ink">{selectedKeys.length} staff selected · {money.format(total)}</p><p className="mt-1 text-xs text-ink-muted">This logs a payment already made outside AttendanceIQ. Selected sessions will no longer appear as pending.</p></div><div className="mt-6 flex justify-end gap-3"><button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button><button type="button" className="btn-primary" disabled={saving || selectedKeys.length === 0} onClick={onSubmit}><CreditCard className="h-4 w-4" />{saving ? "Adding…" : "Add payroll"}</button></div></div></div>;
+  return <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4"><div className="card max-h-[90vh] w-full max-w-3xl overflow-y-auto p-6"><div className="mb-6 flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Manual payroll</p><h3 className="mt-1 font-display text-xl font-bold text-ink">Add payroll</h3><p className="mt-1 text-sm text-ink-muted">Select staff, record how you paid them, and save the payment run.</p></div><button type="button" className="btn-secondary px-3 py-2" onClick={onCancel}>Cancel</button></div><div className="grid gap-4 sm:grid-cols-3"><label className="label">Payroll date<CustomDatePicker className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} /></label><label className="label">Payment method<CustomSelect className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}><option value="bank_transfer">Bank transfer</option><option value="mobile_money">Mobile money</option><option value="cash">Cash</option><option value="other">Other</option></CustomSelect></label><label className="label">Reference <span className="font-normal text-ink-muted">(optional)</span><input className="input mt-1" value={reference} onChange={(event) => onReferenceChange(event.target.value)} placeholder="Transfer reference" /></label></div><div className="mt-6 overflow-hidden rounded-xl border border-border"><div className="flex items-center justify-between bg-page-bg px-4 py-3"><p className="text-sm font-semibold text-ink">Staff with pending payments</p><span className="text-xs text-ink-muted">Select one or more</span></div><div className="max-h-64 divide-y divide-border overflow-y-auto">{pending.length === 0 ? <p className="px-4 py-8 text-center text-sm text-ink-muted">There are no completed unpaid sessions to add.</p> : pending.map((item) => <label key={item.key} className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-page-bg"><input type="checkbox" checked={selectedKeys.includes(item.key)} onChange={() => onToggle(item.key)} /><InitialsAvatar name={item.personName} size="sm" /><span className="min-w-0 flex-1"><span className="block font-medium text-ink">{item.personName}</span><span className="text-xs text-ink-muted">{duration(item.regularMinutes)} regular · {duration(item.overtimeMinutes)} overtime</span></span><strong className="text-sm text-ink">{money.format(item.totalAmount)}</strong></label>)}</div></div><div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 px-4 py-3"><p className="text-sm font-medium text-ink">{selectedKeys.length} staff selected · {money.format(total)}</p><p className="mt-1 text-xs text-ink-muted">This logs a payment already made outside AttendanceIQ. Selected sessions will no longer appear as pending.</p></div><div className="mt-6 flex justify-end gap-3"><button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button><button type="button" className="btn-primary" disabled={saving || selectedKeys.length === 0} onClick={onSubmit}><CreditCard className="h-4 w-4" />{saving ? "Adding…" : "Add payroll"}</button></div></div></div>;
 }
 
 
@@ -503,7 +507,7 @@ function PendingActionMenu({
         <MoreVertical className="h-4 w-4" />
       </button>
       {isOpen && (
-        <div className="absolute right-0 z-50 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-card-bg shadow-lg animate-fade-up">
+        <div className="absolute right-0 z-50 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-card-bg animate-fade-up">
           <button
             type="button"
             onClick={onEdit}
@@ -624,7 +628,7 @@ function EditPendingDialog({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="label">
             Name
-            <select className="input mt-1" value={activeKey} onChange={(event) => chooseStaff(event.target.value)}>
+            <CustomSelect className="input mt-1" value={activeKey} onChange={(event) => chooseStaff(event.target.value)}>
               <option value="">Select employee or member</option>
               {people.map((person) => {
                 const key = `${person.kind}:${person.id}`;
@@ -634,7 +638,7 @@ function EditPendingDialog({
                   </option>
                 );
               })}
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">
             Role
@@ -642,23 +646,23 @@ function EditPendingDialog({
           </label>
           <label className="label">
             Employment status
-            <select className="input mt-1" value={employmentStatus} onChange={(event) => setEmploymentStatus(event.target.value as PendingPayment["employmentStatus"])}>
+            <CustomSelect className="input mt-1" value={employmentStatus} onChange={(event) => setEmploymentStatus(event.target.value as PendingPayment["employmentStatus"])}>
               <option value="full_time">Full time</option>
               <option value="part_time">Part time</option>
               <option value="contract">Contract</option>
               <option value="internship">Internship</option>
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">
             Payroll date
-            <input type="date" className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} />
+            <CustomDatePicker className="input mt-1" value={runDate} onChange={(event) => onRunDateChange(event.target.value)} />
           </label>
           <label className="label">
             Regular/Overtime hours
-            <select className="input mt-1" value={hoursType} onChange={(event) => setHoursType(event.target.value as "regular" | "overtime")}>
+            <CustomSelect className="input mt-1" value={hoursType} onChange={(event) => setHoursType(event.target.value as "regular" | "overtime")}>
               <option value="regular">Regular hours</option>
               <option value="overtime">Overtime hours</option>
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">
             {hoursType === "regular" ? "Regular hours" : "Overtime hours"}
@@ -677,10 +681,10 @@ function EditPendingDialog({
           </label>
           <label className="label">
             Rate
-            <select className="input mt-1" value={rateType} onChange={(event) => setRateType(event.target.value as "normal" | "overtime")}>
+            <CustomSelect className="input mt-1" value={rateType} onChange={(event) => setRateType(event.target.value as "normal" | "overtime")}>
               <option value="normal">Normal hours</option>
               <option value="overtime">Overtime rate</option>
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">
             {rateType === "normal" ? "Normal hourly rate" : "Overtime base rate"}
@@ -704,12 +708,12 @@ function EditPendingDialog({
           </label>
           <label className="label">
             Payment method
-            <select className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}>
+            <CustomSelect className="input mt-1" value={method} onChange={(event) => onMethodChange(event.target.value as PaymentMethod)}>
               <option value="bank_transfer">Bank transfer</option>
               <option value="mobile_money">Mobile money</option>
               <option value="cash">Cash</option>
               <option value="other">Other</option>
-            </select>
+            </CustomSelect>
           </label>
           <label className="label">
             Reference <span className="font-normal text-ink-muted">(optional)</span>
@@ -809,4 +813,3 @@ function DismissPendingConfirmDialog({
     </div>
   );
 }
-
