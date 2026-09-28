@@ -2,7 +2,7 @@ import {
   Bar, BarChart, CartesianGrid, Legend,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { BarChart3 } from "lucide-react";
+import { BarChart3 } from "./solar";
 import { CHART_COLORS, CHART_THEME, formatChartNumber } from "../lib/chartColors";
 
 export interface AttendanceDataPoint {
@@ -101,7 +101,7 @@ export default function AttendanceChartsSection({
   loading = false,
 }: AttendanceChartsSectionProps) {
   return (
-    <section className="space-y-4 animate-fade-up">
+    <section className="space-y-4 chart-animate">
       <div>
         <h3 className="font-display font-semibold text-black text-xl">{title}</h3>
         {description && <p className="text-ink-muted text-sm mt-1">{description}</p>}

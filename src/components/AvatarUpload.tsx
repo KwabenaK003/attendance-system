@@ -1,5 +1,5 @@
 import { useRef, type ChangeEvent } from "react";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, X } from "./solar";
 import InitialsAvatar from "./InitialsAvatar";
 
 type AvatarUploadProps = { name?: string | null; value?: string | null; onChange: (value: string) => void };

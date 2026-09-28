@@ -1,7 +1,8 @@
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
-import { Users, Search, Shield, User, Briefcase } from "lucide-react";
+import { Users, Search, Shield, User, Briefcase } from "../components/solar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,23 +19,23 @@ interface Employee {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ROLE_BADGE: Record<EmployeeRole, string> = {
-  admin:    "badge-red",
-  manager:  "badge-yellow",
+  admin: "badge-red",
+  manager: "badge-yellow",
   employee: "badge-green",
 };
 
-const ROLE_ICON: Record<EmployeeRole, React.ElementType> = {  // line 23 fix
-  admin:    Shield,
-  manager:  Briefcase,
+const ROLE_ICON: Record<EmployeeRole, React.ElementType> = { // line 23 fix
+  admin: Shield,
+  manager: Briefcase,
   employee: User,
 };
 
 
 export default function EmployeesPage() {
   const { profile } = useAuth();
-  const [employees, setEmployees] = useState<Employee[]>([]);           // line 28 fix
-  const [loading, setLoading]     = useState<boolean>(true);
-  const [search, setSearch]       = useState<string>("");
+  const [employees, setEmployees] = useState<Employee[]>([]); // line 28 fix
+  const [loading, setLoading] = useState<boolean>(true);
+  const [search, setSearch] = useState<string>("");
 
   useEffect(() => { void fetchEmployees(); }, []);
 
@@ -44,7 +45,7 @@ export default function EmployeesPage() {
     setLoading(false);
   }
 
-  async function updateRole(id: string, role: EmployeeRole): Promise<void> {  // line 32 fix
+  async function updateRole(id: string, role: EmployeeRole): Promise<void> { // line 32 fix
     await supabase.from("profiles").update({ role }).eq("id", id);
     void fetchEmployees();
   }
@@ -69,27 +70,27 @@ export default function EmployeesPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="animate-fade-up">
-        <h2 className="font-display font-bold text-2xl text-white">Employees</h2>
-        <p className="text-slate-400 text-sm mt-1">Manage your workforce</p>
+        <h2 className="page-title font-display font-semibold text-lg text-ink">Employees</h2>
+
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 animate-fade-up">
         {[
           { label: "Total Employees", value: employees.length },
-          { label: "Managers",        value: employees.filter((e) => e.role === "manager").length },
-          { label: "Admins",          value: employees.filter((e) => e.role === "admin").length },
+          { label: "Managers", value: employees.filter((e) => e.role === "manager").length },
+          { label: "Admins", value: employees.filter((e) => e.role === "admin").length },
         ].map(({ label, value }) => (
           <div key={label} className="card p-4 text-center">
-            <p className="text-slate-400 text-xs">{label}</p>
-            <p className="font-display font-bold text-2xl text-white mt-1">{value}</p>
+            <p className="text-ink-muted text-xs">{label}</p>
+            <p className="font-display font-semibold text-xl text-ink mt-1">{value}</p>
           </div>
         ))}
       </div>
 
       {/* Search */}
       <div className="relative animate-fade-up">
-        <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+        <Search className="w-4 h-4 text-ink-muted absolute left-4 top-1/2 -translate-y-1/2" />
         <input
           className="input pl-10"
           placeholder="Search employees or departments…"
@@ -103,7 +104,7 @@ export default function EmployeesPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
+              <tr className="border-b border-border">
                 <th className="table-header px-5 py-3 text-left">Employee</th>
                 <th className="table-header px-5 py-3 text-left">Role</th>
                 <th className="table-header px-5 py-3 text-left">Department</th>
@@ -113,20 +114,20 @@ export default function EmployeesPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-10 text-slate-500">Loading…</td>
+                  <td colSpan={4} className="text-center py-10 text-ink-muted">Loading…</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="text-center py-10">
-                    <Users className="w-7 h-7 text-slate-700 mx-auto mb-2" />
-                    <p className="text-slate-500">No employees found</p>
+                    <Users className="w-7 h-7 text-ink-muted mx-auto mb-2" />
+                    <p className="text-ink-muted">No employees found</p>
                   </td>
                 </tr>
               ) : (
                 filtered.map((emp) => {
-                  const RoleIcon = ROLE_ICON[emp.role] ?? User;              // line 98 fix
+                  const RoleIcon = ROLE_ICON[emp.role] ?? User; // line 98 fix
                   return (
-                    <tr key={emp.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
+                    <tr key={emp.id} className="border-b border-border/60 hover:bg-page-bg/20">
 
                       {/* Employee name + avatar */}
                       <td className="px-5 py-3">
@@ -140,7 +141,7 @@ export default function EmployeesPage() {
                               .toUpperCase() ?? "?"}
                           </div>
                           <div>
-                            <p className="text-white font-medium">{emp.full_name ?? "Unknown"}</p>
+                            <p className="text-ink font-medium">{emp.full_name ?? "Unknown"}</p>
                             {emp.id === profile?.id && (
                               <p className="text-accent text-xs">You</p>
                             )}
@@ -151,8 +152,8 @@ export default function EmployeesPage() {
                       {/* Role */}
                       <td className="px-5 py-3">
                         {isAdmin && emp.id !== profile?.id ? (
-                          <select
-                            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-accent/50"
+                          <CustomSelect
+                            className="input w-auto min-w-32 px-2 py-1.5 text-xs"
                             value={emp.role}
                             onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                               void updateRole(emp.id, e.target.value as EmployeeRole)
@@ -161,7 +162,7 @@ export default function EmployeesPage() {
                             <option value="employee">Employee</option>
                             <option value="manager">Manager</option>
                             <option value="admin">Admin</option>
-                          </select>
+                          </CustomSelect>
                         ) : (
                           <span className={`badge ${ROLE_BADGE[emp.role] ?? "badge-blue"} capitalize`}>
                             <RoleIcon className="w-3 h-3" />
@@ -174,7 +175,7 @@ export default function EmployeesPage() {
                       <td className="px-5 py-3">
                         {isAdmin ? (
                           <input
-                            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1 text-xs text-white focus:outline-none focus:border-accent/50 w-32"
+                            className="input w-32 px-3 py-1 text-xs"
                             placeholder="Department"
                             defaultValue={emp.department ?? ""}
                             onBlur={(e: React.FocusEvent<HTMLInputElement>) =>
@@ -182,7 +183,7 @@ export default function EmployeesPage() {
                             }
                           />
                         ) : (
-                          <span className="text-slate-400">{emp.department ?? "—"}</span>
+                          <span className="text-ink-muted">{emp.department ?? "—"}</span>
                         )}
                       </td>
 
@@ -190,20 +191,20 @@ export default function EmployeesPage() {
                       <td className="px-5 py-3">
                         {isAdmin ? (
                           <div className="relative w-28">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-medium">
+                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted text-xs font-medium">
                               GHS
                             </span>
                             <input
                               type="number"
-                              className="bg-slate-800 border border-slate-700 rounded-lg pl-11 pr-2 py-1 text-xs text-white focus:outline-none focus:border-accent/50 w-full"
+                              className="input w-full pl-11 pr-2 py-1 text-xs"
                               defaultValue={emp.hourly_rate ?? ""}
-                              onBlur={(e: React.FocusEvent<HTMLInputElement>) =>   // line 124 fix
+                              onBlur={(e: React.FocusEvent<HTMLInputElement>) => // line 124 fix
                                 void updateRate(emp.id, e.target.value)
                               }
                             />
                           </div>
                         ) : (
-                          <span className="text-slate-400">GHS {emp.hourly_rate ?? 0}/hr</span>
+                          <span className="text-ink-muted">GHS {emp.hourly_rate ?? 0}/hr</span>
                         )}
                       </td>
                     </tr>

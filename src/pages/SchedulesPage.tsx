@@ -1,7 +1,11 @@
+import CustomDatePicker from "../components/CustomDatePicker";
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useState } from "react";
-import { Calendar, Clock3, X } from "lucide-react";
+import { Calendar, X, Search } from "../components/solar";
 import { supabase } from "../lib/supabase";
 import { getWeekStart, type EmployeeSchedule, type ShiftType } from "../lib/shiftSchedule";
+import PageHeader from "../components/PageHeader";
+import RowActionMenu from "../components/RowActionMenu";
 
 type Person = { id: string; full_name: string | null; department: string | null; kind: "employee" | "member" };
 type ScheduleSummary = { person: Person; rows: EmployeeSchedule[] };
@@ -30,6 +34,7 @@ export default function SchedulesPage() {
   const [viewDeleting, setViewDeleting] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   async function loadPeopleAndMemberSchedules() {
     setLoading(true);
@@ -126,21 +131,79 @@ export default function SchedulesPage() {
     if (!error) await loadPeopleAndMemberSchedules();
   }
 
-  const renderScheduleTable = (title: string, emptyText: string, items: ScheduleSummary[]) => (
-    <section className="card p-5 space-y-5">
-      <div><h2 className="font-display text-lg font-semibold text-ink">{title}</h2><p className="text-sm text-ink-muted mt-1">Click View schedule to edit individual days or delete the full week.</p></div>
-      {loading ? <p className="py-8 text-center text-sm text-ink-muted">Loading saved schedules…</p> : items.length === 0 ? <div className="rounded-2xl border border-dashed border-border px-5 py-8 text-center text-sm text-ink-muted">{emptyText}</div> : <div className="overflow-x-auto rounded-2xl border border-border"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-page-bg text-xs uppercase tracking-wide text-ink-muted"><tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Department</th><th className="px-4 py-3">Days scheduled</th><th className="px-4 py-3">Action</th></tr></thead><tbody className="divide-y divide-border">{items.map((item) => <tr key={`${item.person.kind}-${item.person.id}`} className="hover:bg-page-bg/70"><td className="px-4 py-3 font-medium"><button type="button" className="text-left text-primary hover:underline" onClick={() => openSchedule(item)}>{item.person.full_name || "Unnamed"}</button></td><td className="px-4 py-3 text-ink-muted">{item.person.department || "—"}</td><td className="px-4 py-3 text-ink-muted">{item.rows.filter((row) => row.shift_type !== "off").length} of 7 days</td><td className="px-4 py-3"><button type="button" className="btn-secondary text-sm" onClick={() => openSchedule(item)}>View schedule</button></td></tr>)}</tbody></table></div>}
-    </section>
-  );
+  const renderScheduleTable = (title: string, emptyText: string, items: ScheduleSummary[]) => {
+    const query = searchQuery.trim().toLowerCase();
+    const filteredItems = items.filter(({ person }) =>
+      !query || [person.full_name, person.department, person.kind].filter(Boolean).join(" ").toLowerCase().includes(query),
+    );
+    return (
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>
+            <p className="mt-1 text-sm text-ink-muted">Schedules for the week starting {weekStart}.</p>
+          </div>
+
+        </div>
+        {loading ? (
+          <p className="py-10 text-center text-sm text-ink-muted">Loading saved schedules…</p>
+        ) : filteredItems.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-ink-muted">
+            {items.length ? "No schedules match your search." : emptyText}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="bg-page-bg"><tr>
+                <th scope="col" className="table-header px-5 py-3">Person</th>
+                <th scope="col" className="table-header px-5 py-3">Department</th>
+                <th scope="col" className="table-header px-5 py-3">Days scheduled</th>
+                <th scope="col" className="table-header px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody className="divide-y divide-border">
+                {filteredItems.map((item) => {
+                  const scheduledDays = item.rows.filter((row) => row.shift_type !== "off").length;
+                  return <tr key={`${item.person.kind}-${item.person.id}`}>
+                    <td className="px-5 py-3 font-medium text-ink">
+                      <button type="button" className="text-left hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => openSchedule(item)}>{item.person.full_name || "Unnamed"}</button>
+                      <span className="ml-2 text-xs capitalize text-ink-muted">{item.person.kind}</span>
+                    </td>
+                    <td className="px-5 py-3 text-ink-muted">{item.person.department || "—"}</td>
+                    <td className="px-5 py-3"><span className={scheduledDays ? "badge badge-green" : "badge badge-yellow"}>{scheduledDays} of 7 days</span></td>
+                    <td className="px-5 py-2 text-right"><RowActionMenu label={item.person.full_name || "person"} actions={[{ label: "View schedule", onSelect: () => openSchedule(item) }]} /></td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  };
 
   return (
-    <div className="space-y-6">
-      <div><p className="text-xs uppercase tracking-[0.2em] text-primary">Attendance planning</p><h1 className="font-display text-2xl font-bold text-ink mt-2">Weekly schedules</h1><p className="text-sm text-ink-muted mt-1">View and manage weekly schedules for employees and members.</p></div>
-      <section className="card p-5"><label className="text-sm text-ink-muted">Week starting<input type="date" className="input mt-1 max-w-xs" value={weekStart} onChange={(event) => setWeekStart(getWeekStart(new Date(`${event.target.value}T12:00:00`)))} /></label></section>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="Workforce planning" title="Weekly schedules" description="Review scheduled coverage and update shifts for staff and members." />
+      <section className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="label mb-0 sm:w-56">Week starting<CustomDatePicker className="input mt-1" value={weekStart} onChange={(event) => setWeekStart(getWeekStart(new Date(`${event.target.value}T12:00:00`)))} /></label>
+        <label className="relative block min-w-0 flex-1"><span className="sr-only">Search schedules</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input type="search" className="input pl-9" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search person, department, or type" /></label>
+
+      </section>
       {renderScheduleTable("Saved staff schedules", "No staff schedules have been saved for this week.", staffSchedules)}
       {renderScheduleTable("Saved member schedules", "No member schedules have been saved for this week.", memberSchedules)}
-      <section className="card p-5 space-y-5"><div><h2 className="font-display text-lg font-semibold text-ink">Create or edit a schedule</h2><p className="text-sm text-ink-muted mt-1">A schedule is saved only after you select Save weekly schedule.</p></div><div className="grid gap-3 sm:grid-cols-2"><select className="input" value={selected?.id || ""} onChange={(event) => setSelected(people.find((person) => person.id === event.target.value) || null)}><option value="">Select employee or member</option>{people.map((person) => <option key={`${person.kind}-${person.id}`} value={person.id}>{person.full_name || "Unnamed"} · {person.kind}</option>)}</select><input type="date" className="input" value={weekStart} onChange={(event) => setWeekStart(getWeekStart(new Date(`${event.target.value}T12:00:00`)))} /></div>{selected && <div className="space-y-3">{rows.map((row) => <div key={row.weekday} className="grid grid-cols-[1fr_180px] items-center gap-3 border-b border-border py-3"><span className="text-sm font-medium text-ink">{DAYS[row.weekday]}</span><select className="input" value={row.shift_type} onChange={(event) => update(row.weekday, event.target.value as ShiftType)}><option value="morning">Morning</option><option value="evening">Evening</option><option value="off">Off</option></select></div>)}<button className="btn-primary" onClick={() => void save()}>Save weekly schedule</button>{message && <p className="text-sm text-primary">{message}</p>}</div>}</section>
-      {viewing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" role="dialog" aria-modal="true" aria-label={`${viewing.person.full_name || "Person"} weekly schedule`} onClick={() => setViewing(null)}><div className="card max-h-[90vh] w-full max-w-xl overflow-y-auto p-6" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.2em] text-primary">Edit weekly schedule</p><h2 className="font-display text-2xl font-bold text-ink mt-2">{viewing.person.full_name || "Unnamed"}</h2><p className="text-sm text-ink-muted mt-1">Week starting {weekStart}</p></div><button type="button" className="btn-secondary p-2" onClick={() => setViewing(null)} aria-label="Close schedule"><X className="h-4 w-4" /></button></div><div className="mt-6 space-y-2">{DAYS.map((day, weekday) => { const row = viewingRows.find((item) => item.weekday === weekday); return <div key={day} className="grid grid-cols-[1fr_180px] items-center gap-4 rounded-xl border border-border bg-page-bg px-4 py-3"><span className="flex items-center gap-2 font-medium text-ink"><Calendar className="h-4 w-4 text-primary" />{day}</span><select className="input" value={row?.shift_type || "off"} onChange={(event) => updateViewing(weekday, event.target.value as ShiftType)}><option value="morning">Morning</option><option value="evening">Evening</option><option value="off">Off</option></select></div>; })}</div><div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" className="btn-secondary border-danger/30 text-danger" onClick={() => void deleteViewingSchedule()} disabled={viewDeleting || viewSaving}>{viewDeleting ? "Deleting…" : "Delete weekly schedule"}</button><button type="button" className="btn-primary" onClick={() => void saveViewingSchedule()} disabled={viewSaving || viewDeleting}>{viewSaving ? "Saving…" : "Save changes"}</button></div>{message && <p className="mt-3 text-sm text-primary">{message}</p>}</div></div>}
+      <section className="card space-y-5 p-5 lg:p-6">
+        <div><h2 className="font-display text-lg font-semibold text-ink">Create or edit a schedule</h2><p className="mt-1 text-sm text-ink-muted">Choose a person and week, then assign a shift for each day.</p></div>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_190px]">
+          <label className="label">Person<CustomSelect className="input mt-1" value={selected?.id || ""} onChange={(event) => setSelected(people.find((person) => person.id === event.target.value) || null)}><option value="">Select employee or member</option>{people.map((person) => <option key={`${person.kind}-${person.id}`} value={person.id}>{person.full_name || "Unnamed"} · {person.kind}</option>)}</CustomSelect></label>
+          <label className="label">Week starting<CustomDatePicker aria-label="Schedule week starting" className="input mt-1" value={weekStart} onChange={(event) => setWeekStart(getWeekStart(new Date(`${event.target.value}T12:00:00`)))} /></label>
+        </div>
+        {selected && <div className="space-y-3">
+          {rows.map((row) => <div key={row.weekday} className="grid grid-cols-[minmax(0,1fr)_minmax(140px,180px)] items-center gap-3 border-b border-border py-3"><span className="text-sm font-medium text-ink">{DAYS[row.weekday]}</span><CustomSelect aria-label={`${DAYS[row.weekday]} shift`} className="input" value={row.shift_type} onChange={(event) => update(row.weekday, event.target.value as ShiftType)}><option value="morning">Morning</option><option value="evening">Evening</option><option value="off">Off</option></CustomSelect></div>)}
+          <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-ink-muted">{rows.filter((row) => row.shift_type !== "off").length} days scheduled</p><button className="btn-primary" onClick={() => void save()}>Save weekly schedule</button></div>
+          {message && <p role="status" className="text-sm text-primary">{message}</p>}
+        </div>}
+      </section>
+      {viewing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4" role="dialog" aria-modal="true" aria-label={`${viewing.person.full_name || "Person"} weekly schedule`} onClick={() => setViewing(null)}><div className="card max-h-[90vh] w-full max-w-xl overflow-y-auto p-4 sm:p-6" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><p className="text-xs uppercase tracking-[0.2em] text-primary">Edit weekly schedule</p><h2 className="font-display text-xl font-semibold text-ink mt-2">{viewing.person.full_name || "Unnamed"}</h2><p className="text-sm text-ink-muted mt-1">Week starting {weekStart}</p></div><button type="button" className="btn-secondary p-2" onClick={() => setViewing(null)} aria-label="Close schedule"><X className="h-4 w-4" /></button></div><div className="mt-6 space-y-2">{DAYS.map((day, weekday) => { const row = viewingRows.find((item) => item.weekday === weekday); return <div key={day} className="grid grid-cols-1 items-center gap-2 rounded-xl border border-border bg-page-bg px-3 py-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:gap-4 sm:px-4"><span className="flex items-center gap-2 font-medium text-ink"><Calendar className="h-4 w-4 text-primary" />{day}</span><CustomSelect aria-label={`${day} shift`} className="input" value={row?.shift_type || "off"} onChange={(event) => updateViewing(weekday, event.target.value as ShiftType)}><option value="morning">Morning</option><option value="evening">Evening</option><option value="off">Off</option></CustomSelect></div>; })}</div><div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between"><button type="button" className="btn-danger justify-center" onClick={() => void deleteViewingSchedule()} disabled={viewDeleting || viewSaving}>{viewDeleting ? "Deleting…" : "Delete weekly schedule"}</button><button type="button" className="btn-primary justify-center" onClick={() => void saveViewingSchedule()} disabled={viewSaving || viewDeleting}>{viewSaving ? "Saving…" : "Save changes"}</button></div>{message && <p role="status" className="mt-3 text-sm text-primary">{message}</p>}</div></div>}
     </div>
   );
 }

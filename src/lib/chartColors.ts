@@ -1,41 +1,41 @@
 // Semantic chart colors. Keep chart meaning consistent across the application.
 export const CHART_COLORS = {
-  success: "#16a34a",
-  danger: "#e11d48",
-  warning: "#d97706",
-  info: "#2563eb",
-  genderMale: "#14b8a6",
-  genderFemale: "#1e293b",
-  neutral: "#64748b",
+  success: "#18794e",
+  danger: "#b4233a",
+  warning: "#a85d00",
+  info: "#245db2",
+  genderMale: "#7047EB",
+  genderFemale: "#475d6b",
+  neutral: "#6b7780",
 } as const;
 
 // Shared Recharts presentation tokens. Charts do not inherit application
 // typography reliably, so pass these values to every axis, grid, and legend.
 export const CHART_THEME = {
-  fontFamily: '"Geist Variable", Inter, system-ui, sans-serif',
+  fontFamily: '"Clash Grotesk", system-ui, sans-serif',
   fontSize: 12,
   axisTick: {
-    fill: "#64748b",
+    fill: "#5e6b75",
     fontSize: 12,
-    fontFamily: '"Geist Variable", Inter, system-ui, sans-serif',
+    fontFamily: '"Clash Grotesk", system-ui, sans-serif',
   },
   grid: {
-    stroke: "#e2e8f0",
+    stroke: "#dce3e5",
     strokeDasharray: "3 3",
   },
   legend: {
     verticalAlign: "bottom" as const,
     align: "center" as const,
     wrapperStyle: {
-      fontFamily: '"Geist Variable", Inter, system-ui, sans-serif',
+      fontFamily: '"Clash Grotesk", system-ui, sans-serif',
       fontSize: 12,
       paddingTop: 8,
     },
   },
   yAxisLabel: {
-    fill: "#64748b",
+    fill: "#5e6b75",
     fontSize: 11,
-    fontFamily: '"Geist Variable", Inter, system-ui, sans-serif',
+    fontFamily: '"Clash Grotesk", system-ui, sans-serif',
   },
 } as const;
 
