@@ -248,7 +248,7 @@ button:not(.input):focus-visible {
 .label {
   color: #4b5963;
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: 500 !important;
   margin-bottom: 0.375rem;
   display: block;
 }
