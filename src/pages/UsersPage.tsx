@@ -10,8 +10,9 @@ import {
   UserPlus,
   Users,
   X,
-} from "lucide-react";
+} from "../components/solar";
 import { createDetachedSupabaseClient, SUPABASE_CONFIG_ERROR, supabase } from "../lib/supabase";
+import PageHeader from "../components/PageHeader";
 
 type UserEditorForm = {
   fullName: string;
@@ -201,10 +202,12 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<LooseRow | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LooseRow | null>(null);
+  const visibleUsers = users.filter((user) => `${user.full_name || ""} ${user.email || ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
 
   useEffect(() => {
     void fetchUsers();
@@ -432,24 +435,15 @@ export default function UsersPage() {
   }
 
   return (
-      <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-up">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Users
-          </div>
-          <h2 className="mt-3 font-display text-2xl font-bold text-ink">Users</h2>
-          <p className="mt-1 text-sm text-ink-muted">Create and track admin sign-in accounts for the attendance system.</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setCreatingUser(true)}
-          className="btn-primary text-sm"
-        >
-          <UserPlus className="h-4 w-4" />
-          Add User
-        </button>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="System access" title="Users" description="Create and manage sign-in accounts for the attendance system." actions={<button
+        type="button"
+        onClick={() => setCreatingUser(true)}
+        className="btn-primary text-sm"
+      >
+        <UserPlus className="h-4 w-4" />
+        Add User
+      </button>} />
 
       {error && (
         <div className="flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
@@ -471,9 +465,14 @@ export default function UsersPage() {
         </div>
       )}
 
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1"><span className="label">Search admin users</span><input type="search" className="input" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search by name or email" /></label>
+
+      </div>
+
       <div className="card animate-fade-up overflow-visible">
         <div className="border-b border-border px-5 py-4">
-          <h3 className="font-display text-lg font-semibold text-ink">Created Admin Users</h3>
+          <h2 className="font-display text-lg font-semibold text-ink">Created admin users</h2>
         </div>
         {loading ? (
           <div className="p-8 text-center text-ink-muted">Loading users…</div>
@@ -482,10 +481,12 @@ export default function UsersPage() {
             <Users className="mx-auto mb-2 h-8 w-8 text-ink-muted" />
             <p className="text-ink-muted">No users created yet.</p>
           </div>
+        ) : visibleUsers.length === 0 ? (
+          <p className="p-8 text-center text-sm text-ink-muted">No users match your search.</p>
         ) : (
           <div className="divide-y divide-border">
-            {users.map((user) => (
-              <div key={user.id} className="flex items-center gap-4 px-5 py-4 hover:bg-page-bg">
+            {visibleUsers.map((user) => (
+              <div key={user.id} className="flex flex-wrap items-center gap-4 px-5 py-4 hover:bg-page-bg sm:flex-nowrap">
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-accent/15 bg-accent/10 font-display text-sm font-bold text-accent">
                   {(user.full_name || user.email || "?").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
                 </div>
@@ -504,7 +505,7 @@ export default function UsersPage() {
                     <MoreVertical className="h-4 w-4" />
                   </button>
                   {activeMenuId === user.id && (
-                    <div className="absolute bottom-full right-0 z-10 mb-2 w-36 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
+                    <div className="absolute bottom-full right-0 z-10 mb-2 w-36 rounded-xl border border-border bg-card-bg p-1.5 ">
                       <button
                         type="button"
                         onClick={() => {

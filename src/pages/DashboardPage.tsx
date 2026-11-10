@@ -13,7 +13,7 @@ import {
   UserCheck,
   UserRound,
   Users,
-} from "lucide-react";
+} from "../components/solar";
 import type { ComponentType } from "react";
 import {
   Area,
@@ -31,6 +31,7 @@ import {
   YAxis,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
+import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { loadSystemSettings } from "../lib/systemSettings";
@@ -62,6 +63,7 @@ type StatCardProps = {
   value: string | number;
   sub?: string;
   color?: StatColor;
+  to?: string;
 };
 
 type AttendanceSettings = {
@@ -69,7 +71,7 @@ type AttendanceSettings = {
   lateThresholdMinutes?: number | string;
 };
 
-function StatCard({ icon: Icon, label, value, sub, color = "info" }: StatCardProps) {
+function StatCard({ icon: Icon, label, value, sub, color = "info", to }: StatCardProps) {
   const colors = {
     success: "text-success bg-success/10 border-success/20",
     warning: "text-warn bg-warn/10 border-warn/20",
@@ -77,19 +79,25 @@ function StatCard({ icon: Icon, label, value, sub, color = "info" }: StatCardPro
     neutral: "text-slate-600 bg-slate-500/10 border-slate-500/20",
   } satisfies Record<StatColor, string>;
 
-  return (
-    <div className="stat-card animate-fade-up border-border bg-card-bg">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{label}</p>
-          <p className="mt-2 font-display text-3xl font-semibold text-ink">{typeof value === "number" ? formatChartNumber.format(value) : value}</p>
-          {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
-        </div>
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${colors[color]}`}>
-          <Icon className="h-5 w-5" />
-        </div>
+  const content = (
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">{label}</p>
+        <p className="mt-2 font-display text-3xl font-semibold text-ink">{typeof value === "number" ? formatChartNumber.format(value) : value}</p>
+        {sub && <p className="mt-1 text-xs text-ink-muted">{sub}</p>}
+      </div>
+      <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${colors[color]}`}>
+        <Icon className="h-5 w-5" />
       </div>
     </div>
+  );
+
+  return to ? (
+    <Link to={to} className="stat-card animate-fade-up border-border bg-card-bg text-left transition-colors hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+      {content}
+    </Link>
+  ) : (
+    <div className="stat-card animate-fade-up border-border bg-card-bg">{content}</div>
   );
 }
 
@@ -471,18 +479,16 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <div className="card-glow animate-fade-up overflow-hidden p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-              Dashboard
-            </div>
-            <h2 className="mt-3 font-display text-3xl font-semibold text-ink">Attendance Overview</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-ink-muted">
-              A quick read on attendance, activity, and leave across the organization.
-            </p>
-          </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-ink-muted">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+          <h2 className="page-title mt-1 font-display text-lg font-semibold tracking-tight text-ink">Attendance overview</h2>
+          <p className="mt-1 text-sm text-ink-muted">Your team's attendance and recent activity.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/timesheets" className="btn-secondary px-4 py-2 text-sm">Attendance log</Link>
+          <Link to="/clock" className="btn-primary px-4 py-2 text-sm">Open time clock</Link>
         </div>
       </div>
 
@@ -508,13 +514,13 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={Users} label="Total Members" value={stats.totalMembers} sub="Registered members" color="info" />
           <StatCard icon={UserCheck} label="Present Today" value={stats.presentToday} sub="Checked in today" color="success" />
-          <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="After threshold" color="warning" />
+          <StatCard icon={Calendar} label="Late" value={stats.lateCount} sub="Review attendance log" color="warning" to="/timesheets" />
           <StatCard icon={UserRound} label="Visitors" value={stats.visitorsCount} sub="Registered today" color="neutral" />
         </div>
       )}
 
-        <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-3" : "grid-cols-1"}`}>
-        <div className="card flex h-full min-h-[340px] flex-col p-5">
+      <div className={`grid items-stretch gap-4 ${isAdmin ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+        <div className="card chart-animate flex h-full min-h-[320px] flex-col p-5 lg:p-6">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
               <h3 className="font-display text-lg font-semibold text-ink">This Week&apos;s Hours</h3>
@@ -524,7 +530,7 @@ export default function DashboardPage() {
               <Clock className="h-4 w-4" />
             </div>
           </div>
-          <div className="h-[220px] flex-1">
+          <div className="h-[220px] flex-1 tabular-nums">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={weeklyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <defs>
@@ -553,7 +559,7 @@ export default function DashboardPage() {
         </div>
 
         {isAdmin && (
-          <div className="card flex h-full min-h-[340px] flex-col p-5">
+          <div className="card chart-animate flex h-full min-h-[320px] flex-col p-5 lg:p-6">
             <div className="mb-5">
               <h3 className="font-display text-lg font-semibold text-ink">Active vs Inactive Members</h3>
               <p className="mt-1 text-sm text-ink-muted">Current membership status</p>
@@ -566,7 +572,7 @@ export default function DashboardPage() {
                   <YAxis allowDecimals={false} tick={CHART_THEME.axisTick} axisLine={false} tickLine={false} label={{ value: "Members", angle: -90, position: "insideLeft", ...CHART_THEME.yAxisLabel }} />
                   <Tooltip content={<StatusTooltip />} />
                   <Legend {...CHART_THEME.legend} />
-                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                  <Bar dataKey="value" name="Members" radius={[8, 8, 0, 0]}>
                     {memberStatusData.map((entry) => (
                       <Cell key={entry.name} fill={entry.fill} />
                     ))}
@@ -577,15 +583,16 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Gender Distribution is temporarily hidden while the dashboard is being refined.
         {isAdmin && (
-          <div className="card flex h-full min-h-[340px] flex-col p-5">
+          <div className="card flex h-full min-h-[320px] flex-col p-5 lg:p-6">
             <div className="mb-4">
               <h3 className="font-display text-lg font-semibold text-ink">Gender Distribution</h3>
               <p className="mt-1 text-sm text-ink-muted">Member profile breakdown</p>
             </div>
 
             {loading ? (
-            <div className="flex h-[220px] items-center justify-center text-ink-muted">Loading...</div>
+              <div className="flex h-[220px] items-center justify-center text-ink-muted">Loading...</div>
             ) : statusBreakdown.length === 0 ? (
               <div className="flex h-[220px] items-center justify-center text-ink-muted">No gender data yet.</div>
             ) : (
@@ -606,7 +613,6 @@ export default function DashboardPage() {
                         ))}
                       </Pie>
                       <Tooltip content={<StatusTooltip />} />
-                      <Legend {...CHART_THEME.legend} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="pointer-events-none absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2 text-center">
@@ -615,7 +621,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-2 grid-cols-3">
+                <div className="mt-4 grid grid-cols-2 gap-2">
                   {statusBreakdown.map((slice) => (
                     <div key={slice.name} className="rounded-xl border border-border bg-page-bg px-3 py-3">
                       <div className="flex items-center gap-2">
@@ -630,17 +636,18 @@ export default function DashboardPage() {
             )}
           </div>
         )}
+        */}
       </div>
 
-      <div className="card overflow-hidden p-5">
+      <div className="card overflow-hidden p-5 lg:p-6">
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-          <h3 className="font-display text-lg font-semibold text-ink">Recent Clock In / Out</h3>
-          <p className="mt-1 text-sm text-ink-muted">
-            {isAdmin ? "Latest employee and member clock events." : "Your latest clock events."}
-          </p>
+            <h3 className="font-display text-lg font-semibold text-ink">Recent Clock In / Out</h3>
+            <p className="mt-1 text-sm text-ink-muted">
+              {isAdmin ? "Latest employee and member clock events." : "Your latest clock events."}
+            </p>
           </div>
-          <span className="badge badge-blue w-fit">{recentClockRows.length} events</span>
+
         </div>
 
         {recentClockRows.length === 0 ? (
