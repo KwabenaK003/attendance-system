@@ -1,11 +1,15 @@
+import CustomDatePicker from "../components/CustomDatePicker";
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useState, type ChangeEvent } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, differenceInCalendarDays } from "date-fns";
-import { AlertCircle, ArrowLeft, CheckCircle, Copy, Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical, Search, UserRound } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle, Copy, Plus, X, Calendar, Check, XCircle, Pencil, Trash2, MoreVertical, Search, UserRound } from "../components/solar";
 import { hasManagementAccess } from "../lib/workforce";
 import { buildShareUrl, copyTextToClipboard } from "../lib/shareLinks";
+import PageHeader from "../components/PageHeader";
+import RowActionMenu from "../components/RowActionMenu";
 
 const LEAVE_TYPES = ["sick", "vacation", "personal", "other"];
 const STATUS_BADGE = {
@@ -69,11 +73,10 @@ function Toast({ toast }: { toast: ToastMessage | null }) {
   return (
     <div className="fixed right-6 top-6 z-[140] animate-fade-up">
       <div
-        className={`flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur ${
-          toast.type === "error"
+        className={`flex items-center gap-3 rounded-2xl border px-4 py-3 backdrop-blur ${toast.type === "error"
             ? "border-danger/30 bg-danger/10 text-danger"
             : "border-primary/30 bg-card-bg text-ink"
-        }`}
+          }`}
       >
         {toast.type === "error"
           ? <AlertCircle className="h-4 w-4" />
@@ -517,9 +520,9 @@ export default function LeavePage() {
         )}
         <div>
           <label className="label">Leave Type</label>
-          <select className="input" value={form.type} onChange={set("type")}>
+          <CustomSelect className="input" value={form.type} onChange={set("type")}>
             {LEAVE_TYPES.map((t) => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-          </select>
+          </CustomSelect>
         </div>
         <div className={form.type === "other" ? "" : "hidden"}>
           {form.type === "other" && (
@@ -536,11 +539,11 @@ export default function LeavePage() {
         </div>
         <div>
           <label className="label">Start Date</label>
-          <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
+          <CustomDatePicker className="input" value={form.start_date} onChange={set("start_date")} />
         </div>
         <div>
           <label className="label">End Date</label>
-          <input type="date" className="input" value={form.end_date} onChange={set("end_date")} />
+          <CustomDatePicker className="input" value={form.end_date} onChange={set("end_date")} />
         </div>
         <div className="sm:col-span-2">
           <label className="label">Reason (optional)</label>
@@ -572,7 +575,7 @@ export default function LeavePage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <h2 className="font-display font-bold text-2xl text-ink">New Leave Request</h2>
+            <h2 className="page-title font-display font-semibold text-lg text-ink">New Leave Request</h2>
             <p className="text-ink-muted text-sm mt-1">Create a leave request for your signed-in account.</p>
           </div>
           <button onClick={() => navigate("/leave")} className="btn-secondary text-sm">
@@ -592,7 +595,7 @@ export default function LeavePage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-            <h2 className="font-display font-bold text-2xl text-ink">
+            <h2 className="page-title font-display font-semibold text-lg text-ink">
               Edit Leave Request
             </h2>
             <p className="text-ink-muted text-sm mt-1">
@@ -622,51 +625,46 @@ export default function LeavePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Leave
-          </div>
-          <h2 className="mt-3 font-display font-bold text-2xl text-ink">Leave Requests</h2>
-          <p className="text-ink-muted text-sm mt-1">{isAdmin ? "Manage all leave requests" : "Request and track your time off"}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={copyLeaveRequestLink}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
-            <Copy className="w-4 h-4" /> {requestLinkCopied ? "Copied" : "Leave Request Link"}
-          </button>
-          <button
-            onClick={() => navigate("/leave/admin/new")}
-            className="btn-primary flex items-center gap-2 text-sm"
-          >
-            <Plus className="w-4 h-4" /> Add New Request
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="Time away" title="Leave requests" description={isAdmin ? "Review requests, dates, and approval status." : "Request time off and track your request status."} actions={<>
+        <button
+          onClick={copyLeaveRequestLink}
+          className="btn-secondary flex items-center gap-2 text-sm"
+        >
+          <Copy className="w-4 h-4" /> {requestLinkCopied ? "Copied" : "Leave Request Link"}
+        </button>
+        <button
+          onClick={() => navigate("/leave/admin/new")}
+          className="btn-primary flex items-center gap-2 text-sm"
+        >
+          <Plus className="w-4 h-4" /> Add New Request
+        </button>
+      </>} />
 
       {/* Search & filter bar — replaces the stat cards */}
-      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
-          <input
-            className="input pl-10"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search by name, department, or leave type…"
-          />
-        </div>
-        <select className="input sm:w-44" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1"><span className="label">Search requests</span>
+          <span className="relative block">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+            <input
+              className="input pl-10"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search by name, department, or leave type…"
+            />
+          </span>
+        </label>
+        <label className="sm:w-48"><span className="label">Status</span><CustomSelect className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
           {STATUS_FILTERS.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : status[0].toUpperCase() + status.slice(1)}</option>)}
-        </select>
+        </CustomSelect></label>
+
       </div>
 
       {!loading && visibleRequests.length > 0 && (
         <div className="card animate-fade-up overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Requester</th><th className="table-header px-5 py-3 text-left">Leave type</th><th className="table-header px-5 py-3 text-left">Dates</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right">Actions</th></tr></thead>
+            <thead className="bg-page-bg"><tr className="border-b border-border"><th className="table-header px-5 py-3 text-left">Requester</th><th className="table-header px-5 py-3 text-left">Leave type</th><th className="table-header px-5 py-3 text-left">Dates</th><th className="table-header px-5 py-3 text-left">Status</th><th className="table-header px-5 py-3 text-right"><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{visibleRequests.map((req) => {
               const leaveMember = splitLeaveMember(req.reason);
               const leaveProfile = req.profiles as { full_name?: string } | undefined;
@@ -678,7 +676,7 @@ export default function LeavePage() {
               const canRevert = isAdmin && isResolved;
               const requestStatus = req.status as keyof typeof STATUS_BADGE | undefined;
               const leaveLabel = req.type === "other" && otherType ? otherType : `${req.type} Leave`;
-              return <tr key={req.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 font-medium text-ink">{leaveMember.memberName || leaveProfile?.full_name || "You"}</td><td className="px-5 py-3 capitalize text-ink-muted">{leaveLabel}</td><td className="px-5 py-3 text-ink-muted">{format(new Date(String(req.start_date)), "MMM d, yyyy")} – {format(new Date(String(req.end_date)), "MMM d, yyyy")}</td><td className="px-5 py-3"><span className={`badge ${STATUS_BADGE[requestStatus ?? "pending"] || "badge-blue"}`}>{req.status}</span></td><td className="px-5 py-3"><div className="flex justify-end gap-2">{(isOwnRequest || isAdmin) && <><button type="button" disabled={isResolved} onClick={() => req.id && void updateStatus(String(req.id), "approved")} className="btn-secondary px-2.5 py-1.5 text-xs disabled:opacity-50"><Check className="h-3.5 w-3.5" />Approve</button><button type="button" disabled={isResolved} onClick={() => req.id && void updateStatus(String(req.id), "rejected")} className="btn-secondary px-2.5 py-1.5 text-xs disabled:opacity-50"><XCircle className="h-3.5 w-3.5" />Reject</button></>}{canEdit && <button type="button" onClick={() => startEditing(req)} className="btn-secondary px-2.5 py-1.5 text-xs"><Pencil className="h-3.5 w-3.5" />Edit</button>}{canRevert && <button type="button" onClick={() => req.id && void revertToPending(String(req.id))} className="btn-secondary px-2.5 py-1.5 text-xs"><ArrowLeft className="h-3.5 w-3.5" />Revert</button>}{canDelete && <button type="button" onClick={() => setRequestToDelete(req)} className="btn-danger px-2.5 py-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Delete</button>}</div></td></tr>;
+              return <tr key={req.id} className="border-b border-border/60 last:border-0 hover:bg-page-bg"><td className="px-5 py-3 font-medium text-ink">{leaveMember.memberName || leaveProfile?.full_name || "You"}</td><td className="px-5 py-3 capitalize text-ink-muted">{leaveLabel}</td><td className="px-5 py-3 text-ink-muted">{format(new Date(String(req.start_date)), "MMM d, yyyy")} – {format(new Date(String(req.end_date)), "MMM d, yyyy")}</td><td className="px-5 py-3"><span className={`badge ${STATUS_BADGE[requestStatus ?? "pending"] || "badge-blue"}`}>{req.status}</span></td><td className="px-5 py-2 text-right"><RowActionMenu label={`${leaveLabel} request`} actions={[...((isOwnRequest || isAdmin) ? [{ label: "Approve", icon: <Check className="h-4 w-4" />, disabled: isResolved, onSelect: () => req.id && void updateStatus(String(req.id), "approved") }, { label: "Reject", icon: <XCircle className="h-4 w-4" />, disabled: isResolved, onSelect: () => req.id && void updateStatus(String(req.id), "rejected") }] : []), ...(canEdit ? [{ label: "Edit", icon: <Pencil className="h-4 w-4" />, onSelect: () => startEditing(req) }] : []), ...(canRevert ? [{ label: "Revert", icon: <ArrowLeft className="h-4 w-4" />, onSelect: () => req.id && void revertToPending(String(req.id)) }] : []), ...(canDelete ? [{ label: "Delete", icon: <Trash2 className="h-4 w-4" />, danger: true, onSelect: () => setRequestToDelete(req) }] : [])]} /></td></tr>;
             })}</tbody>
           </table>
         </div>
@@ -752,11 +750,10 @@ export default function LeavePage() {
                           }
                         }}
                         title={isResolved ? `This request is already ${req.status}.` : "Approve leave request"}
-                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${
-                          isResolved
+                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${isResolved
                             ? "border-border bg-page-bg text-ink-muted opacity-60"
                             : "border-green-500/25 bg-green-500/10 text-green-400 hover:bg-green-500/20"
-                        }`}
+                          }`}
                       >
                         <Check className="w-3.5 h-3.5" /> Approve
                       </button>
@@ -769,11 +766,10 @@ export default function LeavePage() {
                           }
                         }}
                         title={isResolved ? `This request is already ${req.status}.` : "Reject leave request"}
-                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${
-                          isResolved
+                        className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed ${isResolved
                             ? "border-border bg-page-bg text-ink-muted opacity-60"
                             : "border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                        }`}
+                          }`}
                       >
                         <XCircle className="w-3.5 h-3.5" /> Reject
                       </button>
@@ -791,7 +787,7 @@ export default function LeavePage() {
                         <MoreVertical className="w-4 h-4" />
                       </button>
                       {openActionMenuId === requestKey && (
-                        <div className="absolute bottom-full right-0 mb-2 z-10 w-48 rounded-xl border border-border bg-card-bg p-1.5 shadow-lg shadow-black/10">
+                        <div className="absolute bottom-full right-0 mb-2 z-10 w-48 rounded-xl border border-border bg-card-bg p-1.5 ">
                           {canEdit && (
                             <button
                               type="button"

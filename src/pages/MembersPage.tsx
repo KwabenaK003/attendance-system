@@ -1,3 +1,5 @@
+import CustomDatePicker from "../components/CustomDatePicker";
+import CustomSelect from "../components/CustomSelect";
 import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -6,14 +8,16 @@ import FaceCaptureField from "../components/FaceCaptureField";
 import InitialsAvatar from "../components/InitialsAvatar";
 import AvatarUpload from "../components/AvatarUpload";
 import Skeleton from "../components/Skeleton";
+import PageHeader from "../components/PageHeader";
+import RowActionMenu from "../components/RowActionMenu";
 import type { FaceEnrollment } from "../types";
 import { DEPARTMENT_OPTIONS, STAFF_ROLE_OPTIONS, getRoleLabel } from "../lib/workforce";
 import {
   Plus, X, Users, Search, Upload, Camera, CheckCircle,
   AlertCircle, Download, Trash2, Edit2, Save, MoreVertical
-} from "lucide-react";
+} from "../components/solar";
 
-const EMPLOYMENT_TYPES = ["full_time","part_time","contract","intern"];
+const EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", "intern"];
 
 type MemberFormState = {
   id?: string;
@@ -146,16 +150,16 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
         </div>
         <div>
           <label className="label">Gender</label>
-          <select className="input" value={form.gender} onChange={set("gender")}>
+          <CustomSelect className="input" value={form.gender} onChange={set("gender")}>
             <option value="">Select gender</option>
             <option value="male">Male</option>
             <option value="female">Female</option>
             <option value="other">Other</option>
-          </select>
+          </CustomSelect>
         </div>
         <div>
           <label className="label">Date of Birth</label>
-          <input type="date" className="input" value={form.date_of_birth} onChange={set("date_of_birth")} />
+          <CustomDatePicker className="input" value={form.date_of_birth} onChange={set("date_of_birth")} />
         </div>
         <div className="sm:col-span-2">
           <label className="label">Address</label>
@@ -170,11 +174,11 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
         </div>
         <div>
           <label className="label">Role</label>
-          <select className="input" value={form.role} onChange={set("role")}>
+          <CustomSelect className="input" value={form.role} onChange={set("role")}>
             {STAFF_ROLE_OPTIONS.map(({ value, label }) => (
               <option key={value} value={value}>{label}</option>
             ))}
-          </select>
+          </CustomSelect>
         </div>
         <div>
           <label className="label">Company Name</label>
@@ -224,11 +228,11 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
         </div>
         <div>
           <label className="label">Employment Type</label>
-          <select className="input" value={form.employment_type} onChange={set("employment_type")}>
+          <CustomSelect className="input" value={form.employment_type} onChange={set("employment_type")}>
             {EMPLOYMENT_TYPES.map(t => (
               <option key={t} value={t}>{t.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</option>
             ))}
-          </select>
+          </CustomSelect>
         </div>
         <div>
           <label className="label">Hourly Rate</label>
@@ -247,7 +251,7 @@ function MemberForm({ initial, onSave, onCancel }: MemberFormProps) {
         </div>
         <div>
           <label className="label">Start Date</label>
-          <input type="date" className="input" value={form.start_date} onChange={set("start_date")} />
+          <CustomDatePicker className="input" value={form.start_date} onChange={set("start_date")} />
         </div>
         {/* Emergency Contact */}
         <SectionHeader title="Emergency Contact" />
@@ -346,7 +350,7 @@ function CSVImportModal({ onClose, onImport }: CSVImportModalProps) {
         employment_type: EMPLOYMENT_TYPES.includes(employmentType) ? employmentType : "full_time",
         employee_id: r.employee_id || null,
         start_date: r.start_date || undefined,
-        gender: ["male","female","other"].includes(gender) ? gender : null,
+        gender: ["male", "female", "other"].includes(gender) ? gender : null,
       };
     }).filter((r) => r.full_name);
     await onImport(mapped);
@@ -407,7 +411,7 @@ function CSVImportModal({ onClose, onImport }: CSVImportModalProps) {
                   <div className="max-h-48 overflow-y-auto rounded-xl border border-border">
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 bg-page-bg">
-                        <tr>{["Name","Email","Role","Dept","Rate","Type"].map(h => (
+                        <tr>{["Name", "Email", "Role", "Dept", "Rate", "Type"].map(h => (
                           <th key={h} className="px-3 py-2 text-left text-ink-muted">{h}</th>
                         ))}</tr>
                       </thead>
@@ -493,9 +497,9 @@ export default function MembersPage() {
     }
     const faceReference = form.faceEnrollment?.cleared
       ? null
-        : form.faceEnrollment
-          ? form.faceEnrollment.reference
-          : form.face_reference || null;
+      : form.faceEnrollment
+        ? form.faceEnrollment.reference
+        : form.face_reference || null;
 
     const payload = {
       full_name: form.full_name,
@@ -601,7 +605,7 @@ export default function MembersPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
           <div>
-          <h2 className="font-display font-bold text-2xl text-ink">
+            <h2 className="page-title font-display font-semibold text-lg text-ink">
               {creatingViaRoute ? "Add Member" : "Edit Member"}
             </h2>
             <p className="text-ink-muted text-sm mt-1">
@@ -646,24 +650,15 @@ export default function MembersPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4 animate-fade-up">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            Workforce
-          </div>
-          <h2 className="mt-3 font-display font-bold text-2xl text-ink">Members</h2>
-          <p className="text-ink-muted text-sm mt-1">Manage your organization&apos;s staff</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowCSV(true)} className="btn-secondary flex items-center gap-2 text-sm">
-            <Upload className="w-4 h-4" />Bulk Import CSV
-          </button>
-          <button onClick={() => { setActiveMenuId(null); navigate("/members/new"); }} className="btn-primary text-sm">
-            <Plus className="w-4 h-4" />Add Member
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="People" title="Members" description="Manage staff records, roles, departments, and attendance setup." actions={<>
+        <button onClick={() => setShowCSV(true)} className="btn-secondary flex items-center gap-2 text-sm">
+          <Upload className="w-4 h-4" />Bulk Import CSV
+        </button>
+        <button onClick={() => { setActiveMenuId(null); navigate("/members/new"); }} className="btn-primary text-sm">
+          <Plus className="w-4 h-4" />Add Member
+        </button>
+      </>} />
 
       {saveError && (
         <div className="flex items-center gap-2 text-danger text-sm bg-danger/10 border border-danger/20 rounded-xl px-4 py-3">
@@ -673,10 +668,11 @@ export default function MembersPage() {
       )}
 
       {/* Search */}
-      <div className="card flex flex-col gap-3 p-4 animate-fade-up sm:flex-row">
-        <div className="relative flex-1"><Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" /><input className="input pl-10" placeholder="Search name, email, department, employee ID…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-        <select className="input sm:w-48" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{Array.from(new Set(members.map((member) => String(member.department || "")).filter(Boolean))).sort().map((department) => <option key={department} value={department}>{department}</option>)}</select>
-        <select className="input sm:w-40" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="all">All roles</option>{Array.from(new Set(members.map((member) => String(member.role || "employee")))).sort().map((role) => <option key={role} value={role}>{getRoleLabel(role)}</option>)}</select>
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+        <label className="min-w-0 flex-1"><span className="label">Search members</span><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" /><input type="search" className="input pl-9" placeholder="Name, email, department, or ID" value={search} onChange={(e) => setSearch(e.target.value)} /></div></label>
+        <label className="sm:w-48"><span className="label">Department</span><CustomSelect className="input" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}><option value="all">All departments</option>{Array.from(new Set(members.map((member) => String(member.department || "")).filter(Boolean))).sort().map((department) => <option key={department} value={department}>{department}</option>)}</CustomSelect></label>
+        <label className="sm:w-40"><span className="label">Role</span><CustomSelect className="input" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}><option value="all">All roles</option>{Array.from(new Set(members.map((member) => String(member.role || "employee")))).sort().map((role) => <option key={role} value={role}>{getRoleLabel(role)}</option>)}</CustomSelect></label>
+
       </div>
 
       {!loading && filtered.length > 0 && (
@@ -689,7 +685,7 @@ export default function MembersPage() {
                 <th className="table-header px-5 py-3 text-left">Department</th>
                 <th className="table-header px-5 py-3 text-left">Employment</th>
                 <th className="table-header px-5 py-3 text-left">Face ID</th>
-                <th className="table-header px-5 py-3 text-right">Actions</th>
+                <th className="table-header px-5 py-3 text-right"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -702,7 +698,7 @@ export default function MembersPage() {
                   <td className="px-5 py-3 text-ink-muted">{member.department || "—"}</td>
                   <td className="px-5 py-3 capitalize text-ink-muted">{String(member.employment_type || "—").replace("_", " ")}</td>
                   <td className="px-5 py-3"><span className={`badge ${member.face_reference || member.face_enrolled ? "badge-green" : "badge-yellow"}`}>{member.face_reference || member.face_enrolled ? "Enrolled" : "Not enrolled"}</span></td>
-                  <td className="px-5 py-3"><div className="flex justify-end gap-2"><button type="button" onClick={() => member.id && navigate(`/members/${member.id}/edit`)} className="btn-secondary px-3 py-1.5 text-xs"><Edit2 className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => member.id && setDeleteId(String(member.id))} className="btn-danger px-3 py-1.5 text-xs"><Trash2 className="h-3.5 w-3.5" />Delete</button></div></td>
+                  <td className="px-5 py-2 text-right"><RowActionMenu label={member.full_name || "member"} actions={[{ label: "Edit", icon: <Edit2 className="h-4 w-4" />, onSelect: () => member.id && navigate(`/members/${member.id}/edit`) }, { label: "Delete", icon: <Trash2 className="h-4 w-4" />, danger: true, onSelect: () => member.id && setDeleteId(String(member.id)) }]} /></td>
                 </tr>
               ))}
             </tbody>
@@ -761,7 +757,7 @@ export default function MembersPage() {
                         </div>
                       </div>
 
-              <div
+                      <div
                         ref={activeMenuId === m.id ? activeMenuRef : null}
                         className="relative flex-shrink-0 z-20"
                       >
@@ -774,8 +770,8 @@ export default function MembersPage() {
                         </button>
 
                         {activeMenuId === m.id && (
-                          <div className="absolute bottom-full right-0 mb-2 w-36 rounded-xl border border-border bg-card-bg shadow-lg shadow-black/10 p-1.5 z-10">
-                              <button
+                          <div className="absolute bottom-full right-0 mb-2 w-36 rounded-xl border border-border bg-card-bg p-1.5 z-10">
+                            <button
                               onClick={() => {
                                 setActiveMenuId(null);
                                 if (m.id) {
@@ -818,7 +814,7 @@ export default function MembersPage() {
             <h3 className="font-display font-semibold text-ink mb-1">Delete Member?</h3>
             <p className="text-ink-muted text-sm mb-5">This also deletes all their time entries and cannot be undone.</p>
             <div className="flex gap-3">
-                        <button onClick={() => deleteId && void deleteMember(deleteId)} className="btn-danger flex-1 justify-center">Delete</button>
+              <button onClick={() => deleteId && void deleteMember(deleteId)} className="btn-danger flex-1 justify-center">Delete</button>
               <button onClick={() => setDeleteId(null)} className="btn-secondary flex-1 justify-center">Cancel</button>
             </div>
           </div>

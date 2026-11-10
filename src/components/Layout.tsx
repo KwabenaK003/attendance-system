@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate } from "react-router-dom";
-import type { ComponentType, FocusEvent, ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { formatDistanceToNow } from "date-fns";
@@ -13,7 +13,7 @@ import {
   Clock, LayoutDashboard, Users, FileText,
   Calendar, BarChart2, Settings, LogOut, Menu, X, ChevronRight,
   Bell, Building2, CheckCircle2, Clock3, ScanFace, UserRound, ClipboardList, UserPlus, WalletCards
-} from "lucide-react";
+} from "./solar";
 
 const navSections = [
   {
@@ -99,7 +99,7 @@ function NotificationRow({ icon: Icon, title, body, tone = "default", onDismiss 
 
   return (
     <div
-      className={`rounded-xl border px-3 py-3 shadow-sm ${toneClasses[tone] || toneClasses.default} ${onDismiss ? "cursor-pointer" : ""}`}
+      className={`rounded-xl border px-3 py-3 ${toneClasses[tone] || toneClasses.default} ${onDismiss ? "cursor-pointer" : ""}`}
       onClick={onDismiss}
     >
       <div className="flex items-start gap-3">
@@ -133,7 +133,6 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { profile, signOut, displayName } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [desktopSidebarExpanded, setDesktopSidebarExpanded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
   const [notificationPanelStyle, setNotificationPanelStyle] = useState({ top: 56, right: 16, width: 352 });
@@ -194,7 +193,8 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const loadNotificationState = useCallback(async ({ silent = false } = {}) => {
     if (!profile?.id) {
-      setNotificationState((current) => ({ ...current,
+      setNotificationState((current) => ({
+        ...current,
         loading: false,
         latestPunch: null,
         latestMemberActivity: null,
@@ -257,7 +257,8 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       const latestMemberActivity = sortTimeActivity(buildMemberActivity(recentMemberEntries || []))[0] || null;
 
-      setNotificationState((current) => ({ ...current,
+      setNotificationState((current) => ({
+        ...current,
         loading: false,
         latestPunch: latestPunch?.[0] || null,
         latestMemberActivity,
@@ -499,22 +500,16 @@ export default function Layout({ children }: { children: ReactNode }) {
   const unreadCount = visibleNotifications.length;
   const visibleNavSections = navSections;
 
-  const handleDesktopSidebarBlur = (event: FocusEvent<HTMLElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-      setDesktopSidebarExpanded(false);
-    }
-  };
-
   const SidebarContent = ({ compact = false }: { compact?: boolean }) => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className={`border-b border-white/10 py-5 ${compact ? "px-3" : "px-4"}`}>
         <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-          <div className="logo-breathe w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center clock-ring">
-            <Building2 className="w-4 h-4 text-primary" />
+          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-white">
+            <Building2 className="w-5 h-5 text-white" />
           </div>
           <div className={compact ? "hidden" : "min-w-0"}>
-            <h1 className="font-display font-bold text-sidebar-text text-lg leading-none">AttendanceIQ</h1>
+            <h1 className="font-display font-semibold text-sidebar-text text-sm leading-none">AttendanceIQ</h1>
           </div>
         </div>
       </div>
@@ -525,7 +520,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           {visibleNavSections.map((section, sectionIndex) => (
             <div key={section.label || "overview"} className="space-y-1">
               {!compact && section.label && (
-                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-sidebar-text/40">
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-text/50">
                   {section.label}
                 </p>
               )}
@@ -556,25 +551,20 @@ export default function Layout({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-page-bg text-ink">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col bg-sidebar flex-shrink-0 shadow-2xl shadow-black/10 transition-[width] duration-300 ease-out ${
-          desktopSidebarExpanded ? "w-60" : "w-20"
-        }`}
-        onMouseEnter={() => setDesktopSidebarExpanded(true)}
-        onMouseLeave={() => setDesktopSidebarExpanded(false)}
-        onFocusCapture={() => setDesktopSidebarExpanded(true)}
-        onBlurCapture={handleDesktopSidebarBlur}
+        className="hidden lg:flex w-64 flex-col bg-sidebar flex-shrink-0 border-r border-white/10"
       >
-        <SidebarContent compact={!desktopSidebarExpanded} />
+        <SidebarContent />
       </aside>
 
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-        <aside className="relative w-64 bg-sidebar flex flex-col z-10 shadow-2xl">
+          <button type="button" aria-label="Close navigation" className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+          <aside id="mobile-navigation" role="dialog" aria-modal="true" aria-label="Main navigation" className="relative z-10 flex w-72 max-w-[calc(100vw-3rem)] flex-col bg-sidebar ">
             <button
-              className="absolute top-4 right-4 text-sidebar-text/50 hover:text-sidebar-text"
+              className="absolute top-4 right-4 rounded-lg p-2 text-sidebar-text/70 hover:bg-white/10 hover:text-sidebar-text"
               onClick={() => setSidebarOpen(false)}
+              aria-label="Close navigation"
             >
               <X className="w-5 h-5" />
             </button>
@@ -586,8 +576,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="h-14 border-b border-border bg-card-bg flex items-center px-4 gap-4 flex-shrink-0">
-          <button className="lg:hidden text-ink-muted hover:text-ink" onClick={() => setSidebarOpen(true)}>
+        <header className="h-16 border-b border-border bg-page-bg flex items-center px-4 lg:px-7 gap-4 flex-shrink-0">
+          <button className="lg:hidden rounded-lg p-2 text-ink-muted hover:bg-page-bg hover:text-ink" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="mobile-navigation">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1" />
@@ -597,11 +587,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 ref={notificationButtonRef}
                 type="button"
                 onClick={() => setNotificationsOpen((open) => !open)}
-                className={`relative flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
-                  notificationsOpen
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-page-bg text-ink-muted hover:border-primary/30 hover:text-ink"
-                }`}
+                className={`relative flex h-8 w-8 items-center justify-center rounded-lg text-ink-muted transition-colors hover:text-ink ${notificationsOpen ? "text-primary" : ""}`}
                 title="Notifications"
                 aria-label="Toggle notifications"
                 aria-expanded={notificationsOpen}
@@ -620,7 +606,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-page-bg px-2 py-1">
               <InitialsAvatar name={displayName} src={profile?.avatar_url} size="sm" className="h-7 w-7 rounded-md text-[10px]" />
               <div className="hidden min-w-0 sm:block">
-                <p className="max-w-36 truncate text-sm font-medium leading-4 text-ink">{displayName}</p>
+                <p className="max-w-36 truncate text-xs font-medium leading-4 text-ink">{displayName}</p>
                 <p className="text-[11px] leading-4 text-ink-muted">{getRoleLabel(profile?.role)}</p>
               </div>
             </div>
@@ -646,7 +632,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="pointer-events-none fixed inset-0 z-[120]">
           <div
             ref={notificationPanelRef}
-            className="pointer-events-auto fixed rounded-xl border border-border bg-card-bg p-4 shadow-2xl shadow-black/10 backdrop-blur"
+            className="pointer-events-auto fixed rounded-xl border border-border bg-card-bg p-4 backdrop-blur"
             style={notificationPanelStyle}
           >
             <div className="mb-4 flex items-start justify-between gap-3">

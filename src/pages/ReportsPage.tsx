@@ -3,13 +3,14 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { format, parseISO, differenceInMinutes, startOfMonth, subMonths } from "date-fns";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { BarChart3, Download } from "lucide-react";
+import { BarChart3, Download } from "../components/solar";
 import AttendanceChartsSection, { type AttendanceDataPoint } from "../components/AttendanceChartsSection";
 import { buildAttendanceSeries } from "../lib/attendanceAnalytics";
 import { createAttendanceRealtimeChannel } from "../lib/attendanceRealtime";
 import { buildMemberSessions, buildPunchSessions } from "../lib/timeRecords";
 import { hasManagementAccess } from "../lib/workforce";
 import { CHART_COLORS, CHART_THEME, formatChartNumber } from "../lib/chartColors";
+import PageHeader from "../components/PageHeader";
 
 const COLORS = [CHART_COLORS.info, CHART_COLORS.warning];
 type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
@@ -200,12 +201,12 @@ export default function ReportsPage() {
       minutes: number;
       clockIn: string;
     }> = reportSessions.map((session) => ({
-        date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
-        month: format(parseISO(session.clockIn), "MMM yyyy"),
-        day: format(parseISO(session.clockIn), "EEE") as DayKey,
-        minutes: session.minutes,
-        clockIn: session.clockIn,
-      })).sort((left, right) => new Date(left.clockIn).getTime() - new Date(right.clockIn).getTime());
+      date: format(parseISO(session.clockIn), "yyyy-MM-dd"),
+      month: format(parseISO(session.clockIn), "MMM yyyy"),
+      day: format(parseISO(session.clockIn), "EEE") as DayKey,
+      minutes: session.minutes,
+      clockIn: session.clockIn,
+    })).sort((left, right) => new Date(left.clockIn).getTime() - new Date(right.clockIn).getTime());
 
     // Monthly totals
     const byMonth: Record<string, number> = {};
@@ -246,14 +247,8 @@ export default function ReportsPage() {
   const hasDayOfWeekData = byDay.some((entry) => entry.hours > 0);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="animate-fade-up">
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-          Reports
-        </div>
-        <h2 className="mt-3 font-display font-bold text-2xl text-ink">Reports & Analytics</h2>
-        <p className="text-ink-muted text-sm mt-1">Workforce insights and time analysis</p>
-      </div>
+    <div className="mx-auto max-w-[1440px] space-y-6 lg:space-y-7">
+      <PageHeader eyebrow="Insights" title="Reports & analytics" description="Workforce trends and time analysis for the selected reporting periods." />
 
       {/* This month stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
@@ -281,7 +276,7 @@ export default function ReportsPage() {
       )}
 
       {/* Charts */}
-      <div className="grid lg:grid-cols-3 gap-4 animate-fade-up">
+      <div className="grid lg:grid-cols-3 gap-4 chart-animate">
         {/* Monthly bars */}
         <div className="card p-5 lg:col-span-2">
           <h3 className="font-display font-semibold text-ink mb-4">Monthly Hours (6 months)</h3>
@@ -329,7 +324,7 @@ export default function ReportsPage() {
       </div>
 
       {/* By day of week */}
-      <div className="card p-5 animate-fade-up">
+      <div className="card p-5 chart-animate">
         <h3 className="font-display font-semibold text-ink mb-4">Average Hours by Day of Week</h3>
         {loading || !hasDayOfWeekData ? (
           <EmptyChart message="No daily hours data yet" />
